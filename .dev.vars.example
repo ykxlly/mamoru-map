@@ -1,0 +1,4 @@
+# Copy this file to .dev.vars for local development.
+ADMIN_TOKEN="replace-with-a-long-random-token"
+# Comma-separated hostnames. Keep this narrow in production.
+ALLOWED_SOURCE_HOSTS="www.city.kumamoto.jp,data.jma.go.jp,alert.solafune.com"

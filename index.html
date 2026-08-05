@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="日本全国の災害情報を、一次情報と確認状態付きで地図表示するサービス">
+  <title>まもるマップ | 日本全国の災害情報</title>
+  <link rel="preconnect" href="https://unpkg.com">
+  <link rel="preconnect" href="https://cyberjapandata.gsi.go.jp">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" crossorigin="anonymous">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" href="/favicon.png" type="image/png">
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  <meta name="theme-color" content="#1d4e89">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="まもるマップ">
+</head>
+<body>
+  <a class="skip-link" href="#event-list">情報一覧へ移動</a>
+  <header class="app-header">
+    <a class="brand" href="/" aria-label="まもるマップ トップ">
+      <span class="brand-mark" aria-hidden="true">ま</span>
+      <span><strong>まもるマップ</strong><small>日本全国・災害情報・出典確認型</small></span>
+    </a>
+    <div class="header-status">
+      <span id="connection-badge" class="connection-badge" data-state="loading">取得中</span>
+      <span id="last-updated" class="last-updated">データ最終取得: 確認中</span>
+      <a class="admin-link" href="/admin">運用コンソール</a>
+    </div>
+  </header>
+
+  <main class="app-shell">
+    <section class="map-region" aria-labelledby="map-title">
+      <h1 id="map-title" class="visually-hidden">日本全国の災害情報マップ</h1>
+      <div id="map" role="region" aria-label="災害情報と履歴の地図"></div>
+
+      <details class="layer-panel">
+        <summary>表示レイヤー</summary>
+        <fieldset>
+          <legend>緊急度</legend>
+          <label><input class="priority-toggle" type="checkbox" value="emergency" checked> <span class="legend-dot emergency"></span>緊急</label>
+          <label><input class="priority-toggle" type="checkbox" value="high" checked> <span class="legend-dot high"></span>高</label>
+          <label><input class="priority-toggle" type="checkbox" value="medium" checked> <span class="legend-dot medium"></span>中</label>
+        </fieldset>
+        <fieldset>
+          <legend>ピンの絵文字</legend>
+          <div class="emoji-legend" aria-label="ピン絵文字の意味">
+            <span>⚠️ 警報・注意</span><span>🏚️ 被害</span><span>🚫 通行止め</span>
+            <span>🛣️ 道路規制・通行実績</span><span>🏠 避難所</span><span>🤝 支援</span><span>📍 その他</span>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>確認状態</legend>
+          <label><input class="verification-toggle" type="checkbox" value="verified" checked> 確認済み</label>
+          <label><input class="verification-toggle" type="checkbox" value="auto_unverified" checked> 自動公開</label>
+          <label class="reference-layer-toggle"><input class="verification-toggle" type="checkbox" value="reference_unverified"> 報道・参考（未確認）</label>
+        </fieldset>
+        <fieldset>
+          <legend>情報の状態</legend>
+          <label><input class="lifecycle-toggle" type="checkbox" value="active" checked> 発生中</label>
+          <label><input class="lifecycle-toggle" type="checkbox" value="ongoing" checked> 継続</label>
+          <label><input class="lifecycle-toggle" type="checkbox" value="resolved"> 解消</label>
+          <label><input class="lifecycle-toggle" type="checkbox" value="expired"> 期限切れ</label>
+          <label><input class="lifecycle-toggle" type="checkbox" value="needs_review"> 要再確認</label>
+        </fieldset>
+        <fieldset>
+          <legend>背景地図</legend>
+          <label><input name="basemap" type="radio" value="pale" checked> 淡色地図</label>
+          <label><input name="basemap" type="radio" value="standard"> 標準地図</label>
+        </fieldset>
+      </details>
+
+      <div class="map-note"><strong>位置・道路について</strong><span>代表点や推定位置を含みます。「通行実績」は現在の通行可を保証しません。規制情報と道路管理者の案内を優先してください。</span></div>
+    </section>
+
+    <aside class="sidebar" aria-labelledby="sidebar-title">
+      <div class="sidebar-head">
+        <p class="eyebrow">SOURCE → REVIEW → PUBLISH</p>
+        <div class="title-row">
+          <div><h2 id="sidebar-title">全国の災害情報</h2><p id="result-status" class="result-status" aria-live="polite">読み込み中です…</p></div>
+          <span id="visible-count" class="visible-count">0</span>
+        </div>
+      </div>
+
+      <section id="weather-panel" class="weather-panel" aria-labelledby="weather-title" aria-busy="true">
+        <div class="weather-heading">
+          <div><p class="weather-eyebrow">LOCAL REFERENCE WEATHER</p><h3 id="weather-title">参考気象・熊本市中心部</h3></div>
+          <time id="weather-time">取得中</time>
+        </div>
+        <dl class="weather-metrics">
+          <div><dt>気温</dt><dd id="weather-temperature">―</dd></div>
+          <div><dt>降水量</dt><dd id="weather-precipitation">―</dd></div>
+          <div><dt>風速</dt><dd id="weather-wind">―</dd></div>
+        </dl>
+        <p id="weather-notice" class="weather-notice" aria-live="polite">気象参考情報を読み込んでいます。</p>
+        <a href="https://open-meteo.com/" target="_blank" rel="noreferrer noopener">Weather data by Open-Meteo.com</a>
+      </section>
+
+      <form id="filter-form" class="filter-form" action="/" method="get" role="search">
+        <div class="search-field">
+          <label for="search-query">地名・キーワードで探す</label>
+          <div class="search-control"><span aria-hidden="true">⌕</span><input id="search-query" name="q" type="search" autocomplete="off" enterkeyhint="search" placeholder="例：石川県、避難所、通行止め"></div>
+        </div>
+
+        <div class="priority-summary" aria-label="緊急度別件数">
+          <div><span class="legend-dot emergency"></span><small>緊急</small><strong id="count-emergency">0</strong></div>
+          <div><span class="legend-dot high"></span><small>高</small><strong id="count-high">0</strong></div>
+          <div><span class="legend-dot medium"></span><small>中</small><strong id="count-medium">0</strong></div>
+        </div>
+
+        <section class="timeline-panel" aria-labelledby="timeline-title">
+          <div class="timeline-heading"><h3 id="timeline-title">時間を遡る</h3><output id="timeline-date" for="timeline-slider">イベント未選択</output></div>
+          <label class="event-select-label" for="event-select">災害イベント
+            <select id="event-select"><option value="">イベントを選択</option></select>
+          </label>
+          <input id="timeline-slider" type="range" min="0" max="0" value="0" step="1" disabled aria-describedby="timeline-help">
+          <div class="timeline-ends" aria-hidden="true"><span id="timeline-start">―</span><span id="timeline-end">―</span></div>
+          <div class="timeline-actions">
+            <button id="timeline-onset" type="button" disabled>発生時</button>
+            <button id="timeline-current" type="button" disabled>イベント最新</button>
+            <button id="timeline-clear" type="button" disabled>選択解除</button>
+          </div>
+          <p id="timeline-help">特定イベントを選ぶと、2時間ごとの経過を表示します。</p>
+        </section>
+
+        <fieldset class="filter-grid">
+          <legend>一覧の絞り込み</legend>
+          <label for="filter-area">地域<select id="filter-area" name="area"><option value="">すべて</option></select></label>
+          <label for="filter-type">情報の種類<select id="filter-type" name="type"><option value="">すべて</option><option value="warning">警報・注意</option><option value="damage">被害</option><option value="road">道路・交通</option><option value="shelter">避難所</option><option value="support">支援</option><option value="other">その他</option></select></label>
+          <label for="filter-sort">並び順<select id="filter-sort" name="sort"><option value="newest">発表日時が新しい順</option><option value="priority">緊急度が高い順</option><option value="updated">取得日時が新しい順</option></select></label>
+        </fieldset>
+
+        <div class="filter-actions">
+          <label class="emergency-switch"><input id="emergency-only" name="emergency" type="checkbox"> 緊急のみ表示</label>
+          <button id="reset-filters" class="reset-button" type="reset">条件を解除</button>
+        </div>
+      </form>
+
+      <div class="export-row">
+        <span>公開データ</span>
+        <a href="/api/reports.csv" download>CSV出力</a>
+        <a href="/api/reports.geojson" download>GeoJSON出力</a>
+      </div>
+
+      <section id="event-list" class="event-list" aria-label="公開情報一覧" tabindex="-1"></section>
+
+      <footer class="sidebar-foot">
+        <p><strong>一次情報を確認してください。</strong> 本サービスは情報提供用です。避難・救助の判断は、気象庁・自治体・消防などの指示を優先してください。</p>
+        <p>一般利用者からの投稿は受け付けていません。緊急時は <strong>119</strong> または自治体窓口へ連絡してください。</p>
+        <p>背景地図：<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noreferrer noopener">国土地理院</a></p>
+      </footer>
+    </aside>
+  </main>
+
+  <div id="live" class="visually-hidden" aria-live="polite"></div>
+  <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js" crossorigin="anonymous"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "name": "mamoru-map",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "test": "node --test worker/index.test.js"
+  },
+  "devDependencies": {
+    "wrangler": "^4.31.0"
+  }
+}

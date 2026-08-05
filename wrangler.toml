@@ -1,0 +1,25 @@
+name = "mamoru-map-api"
+main = "worker/index.js"
+compatibility_date = "2026-08-03"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = ["/api/*"]
+not_found_handling = "single-page-application"
+
+[triggers]
+crons = ["*/15 * * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "mamoru-map"
+database_id = "f6cd8fe9-a679-4e92-b88b-05f63fdcb29e"
+
+[vars]
+APP_ENV = "production"
+APP_VERSION = "2026-08-04-trust-v2.1"
+ALLOWED_SOURCE_HOSTS = "www.city.kumamoto.jp,data.jma.go.jp,alert.solafune.com,www.toyota.co.jp"
+ARTICLE_SOURCE_HOSTS = "www.city.kumamoto.jp,data.jma.go.jp,www.data.jma.go.jp,www.jma.go.jp,www.fnn.jp,portal.bousai.pref.kumamoto.jp,www.wbgt.env.go.jp"
+AUTO_PUBLISH_ENABLED = "true"
+AUTO_PUBLISH_MIN_CONFIDENCE = "0.82"

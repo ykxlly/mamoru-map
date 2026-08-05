@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.mamorumap.twa",
+      "sha256_cert_fingerprints": [
+        "B7:4D:E1:6E:B7:45:1E:80:89:3A:B3:D2:1C:05:31:BB:BD:47:4E:07:48:22:B1:D7:70:D8:0C:70:22:9C:91:96"
+      ]
+    }
+  }
+]
