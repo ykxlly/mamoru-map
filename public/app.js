@@ -376,7 +376,7 @@ function selectedBucketEnd() {
 }
 
 function formatBucket(value) {
-  if (!Number.isFinite(value)) return 'イベント未選択';
+  if (!Number.isFinite(value)) return '災害を選択';
   return new Intl.DateTimeFormat('ja-JP', {
     timeZone: 'Asia/Tokyo', year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false
   }).format(new Date(value));
@@ -397,7 +397,7 @@ function initializeTimeline() {
   state.timeBuckets = [];
   state.selectedBucketIndex = null;
   const select = $('#event-select');
-  select.replaceChildren(new Option('イベントを選択', ''));
+  select.replaceChildren(new Option('災害を選択', ''));
   state.events.forEach((event) => select.append(new Option(`${event.name}（${event.reports.length}件）`, event.key)));
   configureTimelineForEvent('');
 }
@@ -427,10 +427,10 @@ function configureTimelineForEvent(eventKey) {
 
 function updateTimelineDisplay() {
   const output = $('#timeline-date');
-  output.textContent = state.selectedEventKey ? `${formatBucket(state.timeBuckets[state.selectedBucketIndex])}まで` : 'イベント未選択';
+  output.textContent = state.selectedEventKey ? `${formatBucket(state.timeBuckets[state.selectedBucketIndex])}まで` : '災害を選択';
   $('#timeline-help').textContent = state.selectedEventKey
-    ? '選択イベントを発生時から2時間単位で累積表示します。未確認情報は原文で確認してください。'
-    : '特定イベントを選ぶと、2時間ごとの経過を表示します。';
+    ? '選択した災害を発生時から2時間単位で累積表示します。未確認情報は原文で確認してください。'
+    : '災害を選ぶと、2時間ごとの経過を表示します。';
 }
 
 function render() {
@@ -809,7 +809,7 @@ function bindControls() {
     }
     configureTimelineForEvent(eventKey);
     scheduleRender();
-    $('#live').textContent = eventKey ? '選択した災害イベントを2時間単位で表示します。' : 'イベントの時間絞り込みを解除しました。';
+    $('#live').textContent = eventKey ? '選択した災害を2時間単位で表示します。' : '災害の時間絞り込みを解除しました。';
   });
   $('#timeline-slider').addEventListener('input', (event) => {
     state.selectedBucketIndex = Number(event.target.value);
@@ -819,7 +819,7 @@ function bindControls() {
     state.selectedBucketIndex = 0;
     $('#timeline-slider').value = '0';
     scheduleRender();
-    $('#live').textContent = '選択イベントの発生時点を表示します。';
+    $('#live').textContent = '選択した災害の発生時点を表示します。';
   });
   $('#timeline-current').addEventListener('click', () => {
     state.selectedBucketIndex = state.timeBuckets.length - 1;

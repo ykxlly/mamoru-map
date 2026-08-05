@@ -130,18 +130,18 @@
         </div>
 
         <section class="timeline-panel" aria-labelledby="timeline-title">
-          <div class="timeline-heading"><h3 id="timeline-title">時間を遡る</h3><output id="timeline-date" for="timeline-slider">イベント未選択</output></div>
-          <label class="event-select-label" for="event-select">災害イベント
-            <select id="event-select"><option value="">イベントを選択</option></select>
+          <div class="timeline-heading"><h3 id="timeline-title">時間を遡る</h3><output id="timeline-date" for="timeline-slider">災害を選択</output></div>
+          <label class="event-select-label" for="event-select">災害の記録
+            <select id="event-select"><option value="">災害を選択</option></select>
           </label>
           <input id="timeline-slider" type="range" min="0" max="0" value="0" step="1" disabled aria-describedby="timeline-help">
           <div class="timeline-ends" aria-hidden="true"><span id="timeline-start">―</span><span id="timeline-end">―</span></div>
           <div class="timeline-actions">
             <button id="timeline-onset" type="button" disabled>発生時</button>
-            <button id="timeline-current" type="button" disabled>イベント最新</button>
+            <button id="timeline-current" type="button" disabled>最新</button>
             <button id="timeline-clear" type="button" disabled>選択解除</button>
           </div>
-          <p id="timeline-help">特定イベントを選ぶと、2時間ごとの経過を表示します。</p>
+          <p id="timeline-help">災害を選ぶと、発生から2時間ごとの経過を表示します。</p>
         </section>
 
         <fieldset class="filter-grid">
