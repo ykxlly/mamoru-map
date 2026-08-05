@@ -96,6 +96,10 @@ function initializeMap() {
   map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
   map.on('load', () => {
     Object.entries(MARKER_ICONS).forEach(([name, emoji]) => map.addImage(`emoji-${name}`, createEmojiImage(emoji), { pixelRatio: 2 }));
+    map.addImage('emoji-shelter-facility', createEmojiImage('🏠'), { pixelRatio: 2 });
+    map.addImage('emoji-water-facility', createEmojiImage('💧'), { pixelRatio: 2 });
+    addReferenceLayer(map, 'shelters', '#2f7d5b');
+    addReferenceLayer(map, 'water', '#2777a8');
     map.addSource('reports', { type: 'geojson', data: EMPTY_GEOJSON });
     map.addLayer({
       id: 'report-halo',
@@ -153,6 +157,65 @@ function initializeMap() {
     if (event?.error) $('#live').textContent = '地図タイルの一部を読み込めませんでした。';
   });
   state.map = map;
+}
+
+function addReferenceLayer(map, kind, color) {
+  const iconName = kind === 'water' ? 'emoji-water-facility' : 'emoji-shelter-facility';
+  map.addSource(kind, { type: 'geojson', data: EMPTY_GEOJSON });
+  map.addLayer({
+    id: `${kind}-points`,
+    type: 'circle',
+    source: kind,
+    layout: { visibility: 'none' },
+    paint: {
+      'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 3.5, 14, 6.5],
+      'circle-color': color,
+      'circle-opacity': 0.85,
+      'circle-stroke-width': 1.5,
+      'circle-stroke-color': '#ffffff'
+    }
+  });
+  map.addLayer({
+    id: `${kind}-symbols`,
+    type: 'symbol',
+    source: kind,
+    layout: {
+      visibility: 'none',
+      'icon-image': iconName,
+      'icon-size': ['interpolate', ['linear'], ['zoom'], 8, 0.5, 14, 0.8],
+      'icon-allow-overlap': false,
+      'icon-optional': true
+    }
+  });
+  map.on('mouseenter', `${kind}-points`, () => { map.getCanvas().style.cursor = 'pointer'; });
+  map.on('mouseleave', `${kind}-points`, () => { map.getCanvas().style.cursor = ''; });
+  map.on('click', `${kind}-points`, (event) => {
+    const props = event.features?.[0]?.properties;
+    if (!props) return;
+    new maplibregl.Popup({ closeButton: true, maxWidth: '260px' })
+      .setLngLat(event.lngLat)
+      .setHTML(referencePopupHtml(kind, props))
+      .addTo(map);
+  });
+}
+
+function referencePopupHtml(kind, props) {
+  const kindLabel = kind === 'water' ? '災害時給水拠点' : '指定緊急避難場所（地震）';
+  const name = escapeHtml(props.name || '名称不明');
+  const address = props.address ? `<p class="ref-popup-addr">${escapeHtml(props.address)}</p>` : '';
+  const remarks = props.remarks ? `<p class="ref-popup-remarks">${escapeHtml(props.remarks)}</p>` : '';
+  const note = kind === 'water'
+    ? '実際の給水実施は各水道局の発表を確認してください。'
+    : '実際に開設されているかは各自治体の発表を確認してください。';
+  return `<div class="ref-popup"><span class="ref-popup-kind">${kindLabel}</span>`
+    + `<strong class="ref-popup-name">${name}</strong>${address}${remarks}`
+    + `<p class="ref-popup-note">${note}</p></div>`;
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (ch) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
+  ));
 }
 
 function createEmojiImage(emoji) {
@@ -667,6 +730,33 @@ async function loadWeather() {
   }
 }
 
+async function toggleReferenceLayer(kind, path, visible) {
+  if (!state.mapReady) return;
+  const visibility = visible ? 'visible' : 'none';
+  [`${kind}-points`, `${kind}-symbols`].forEach((layer) => {
+    if (state.map.getLayer(layer)) state.map.setLayoutProperty(layer, 'visibility', visibility);
+  });
+  if (!visible) return;
+  if (state.referenceLoaded?.[kind]) return;
+  try {
+    const response = await fetch(`${apiBase}${path}`, { headers: { accept: 'application/json' }, priority: 'low' });
+    if (!response.ok) throw new Error(`Reference API ${response.status}`);
+    const data = await response.json();
+    const source = state.map.getSource(kind);
+    if (source) source.setData({ type: 'FeatureCollection', features: data.features || [] });
+    state.referenceLoaded = { ...(state.referenceLoaded || {}), [kind]: true };
+    const label = kind === 'water' ? '給水拠点' : '指定緊急避難場所';
+    $('#live').textContent = `${label}を${(data.features || []).length}件表示しました。位置情報であり、実施状況は各機関の発表を確認してください。`;
+  } catch {
+    $('#live').textContent = 'レイヤーの読み込みに失敗しました。時間をおいて再度お試しください。';
+    const input = $(kind === 'water' ? '#layer-water' : '#layer-shelters');
+    if (input) input.checked = false;
+    [`${kind}-points`, `${kind}-symbols`].forEach((layer) => {
+      if (state.map.getLayer(layer)) state.map.setLayoutProperty(layer, 'visibility', 'none');
+    });
+  }
+}
+
 function renderHeatIndex(heat) {
   const box = $('#heat-index');
   if (!box) return;
@@ -759,6 +849,12 @@ function bindControls() {
     state.map.setLayoutProperty('gsi-pale', 'visibility', standard ? 'none' : 'visible');
     state.map.setLayoutProperty('gsi-standard', 'visibility', standard ? 'visible' : 'none');
   }));
+  const sheltersToggle = $('#layer-shelters');
+  if (sheltersToggle) sheltersToggle.addEventListener('change', (event) => toggleReferenceLayer('shelters', '/api/shelters', event.target.checked));
+  // 給水拠点は対象エリア（熊本）の公式オープンデータが未整備のため現在UI非提供。
+  // データ源が整い次第、#layer-water トグルを戻せば water ソース/レイヤーで表示できる。
+  const waterToggle = $('#layer-water');
+  if (waterToggle) waterToggle.addEventListener('change', (event) => toggleReferenceLayer('water', '/api/water-stations', event.target.checked));
   $$('.export-row a').forEach((link) => {
     const path = new URL(link.href).pathname;
     link.href = `${apiBase}${path}`;

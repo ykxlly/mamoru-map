@@ -80,6 +80,7 @@ async function route(request, env, url) {
   if (request.method === 'GET' && /^\/api\/reports\/\d+\/history$/.test(url.pathname)) return publicReportHistory(env.DB, Number(url.pathname.split('/')[3]));
   if (request.method === 'GET' && url.pathname === '/api/archive/reports') return listArchiveReports(env.DB);
   if (request.method === 'GET' && url.pathname === '/api/weather') return currentWeather();
+  if (request.method === 'GET' && url.pathname === '/api/shelters') return listShelters();
   if (request.method === 'GET' && url.pathname === '/api/reports.geojson') return downloadReportsGeoJson(env.DB);
   if (request.method === 'GET' && url.pathname === '/api/reports.csv') return downloadReportsCsv(env.DB);
   if (request.method === 'POST' && /^\/api\/review\/\d+$/.test(url.pathname)) return review(request, env.DB, Number(url.pathname.split('/')[3]));
@@ -563,6 +564,69 @@ async function currentWeather() {
   return new Response(JSON.stringify(weather), { headers: {
     ...JSON_HEADERS,
     'cache-control': 'public, max-age=300, s-maxage=600',
+    'x-content-type-options': 'nosniff'
+  } });
+}
+
+// 国土地理院 指定緊急避難場所データ（skhb04=地震）のz10ベクトルタイル。
+// 熊本地震の被災地中心をカバーするタイル群。出典明示で利用可（地理院タイルと同条件）。
+const SHELTER_TILES = [
+  [882, 412], [882, 413], [883, 411], [883, 412], [883, 413], [883, 414],
+  [884, 412], [884, 413], [884, 414], [885, 413], [885, 414]
+];
+const SHELTER_BBOX = { minLat: 32.5, maxLat: 33.05, minLon: 130.45, maxLon: 131.25 };
+
+async function listShelters() {
+  const seen = new Set();
+  const features = [];
+  for (const [x, y] of SHELTER_TILES) {
+    let response;
+    try {
+      response = await fetch(`https://cyberjapandata.gsi.go.jp/xyz/skhb04/10/${x}/${y}.geojson`, {
+        headers: { accept: 'application/json', 'user-agent': 'MamoruMap/1.0 (+https://mamoru-map-api.krin6525.workers.dev/)' },
+        signal: AbortSignal.timeout(8_000),
+        cf: { cacheEverything: true, cacheTtl: 86_400 }
+      });
+    } catch { continue; }
+    if (!response.ok) continue;
+    let tile;
+    try { tile = await response.json(); } catch { continue; }
+    for (const feature of tile.features || []) {
+      const coords = feature?.geometry?.coordinates;
+      if (!Array.isArray(coords) || coords.length < 2) continue;
+      const lon = Number(coords[0]);
+      const lat = Number(coords[1]);
+      if (!Number.isFinite(lon) || !Number.isFinite(lat)) continue;
+      if (lat < SHELTER_BBOX.minLat || lat > SHELTER_BBOX.maxLat || lon < SHELTER_BBOX.minLon || lon > SHELTER_BBOX.maxLon) continue;
+      const props = feature.properties || {};
+      const name = clean(props.name, 120) || '名称不明の避難場所';
+      const key = `${name}|${lon.toFixed(5)}|${lat.toFixed(5)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      features.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [lon, lat] },
+        properties: { name, address: clean(props.address, 160) || '', remarks: clean(props.remarks, 200) || '' }
+      });
+    }
+  }
+  const payload = {
+    type: 'FeatureCollection',
+    features,
+    meta: {
+      count: features.length,
+      disaster_type: '地震',
+      source: {
+        name: '国土地理院 指定緊急避難場所データ',
+        url: 'https://www.gsi.go.jp/bousaichiri/hinanbasho.html',
+        note: '出典を明示して利用しています。'
+      },
+      notice: '指定緊急避難場所（地震）の位置情報です。実際に開設されているかは各自治体の発表を確認してください。'
+    }
+  };
+  return new Response(JSON.stringify(payload), { headers: {
+    ...JSON_HEADERS,
+    'cache-control': 'public, max-age=3600, s-maxage=86400',
     'x-content-type-options': 'nosniff'
   } });
 }

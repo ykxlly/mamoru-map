@@ -352,6 +352,23 @@
   .summary-type-count { color: var(--teal); font-weight: 800; }
   .summary-note { color: var(--muted); font-size: .66rem; line-height: 1.5; }
 
+  .layer-hint { margin-block-start: .3rem; color: var(--muted); font-size: .64rem; line-height: 1.5; }
+  .ref-popup { font-size: .78rem; line-height: 1.5; }
+  .ref-popup-kind {
+    display: inline-block;
+    margin-block-end: .25rem;
+    padding: .1rem .45rem;
+    border-radius: 999px;
+    background: var(--teal-soft);
+    color: var(--teal);
+    font-size: .62rem;
+    font-weight: 800;
+  }
+  .ref-popup-name { display: block; color: var(--navy); font-size: .86rem; }
+  .ref-popup-addr { margin-block-start: .2rem; color: var(--ink); }
+  .ref-popup-remarks { margin-block-start: .2rem; color: var(--muted); font-size: .7rem; }
+  .ref-popup-note { margin-block-start: .35rem; color: var(--muted); font-size: .64rem; }
+
   .weather-panel {
     margin: 0 1.35rem 1rem;
     padding: .8rem;
