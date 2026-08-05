@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mamoru-map-shell-v1';
+const CACHE_NAME = 'mamoru-map-shell-v2';
 const SHELL_ASSETS = ['/', '/index.html', '/styles.css', '/app.js', '/manifest.json'];
 
 self.addEventListener('install', (event) => {
@@ -15,24 +15,24 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+// network-first: 災害情報アプリのため常に最新を取得し、オフライン時のみキャッシュへフォールバックする。
+// 以前の cache-first では更新が次回訪問まで届かず、古い画面が表示され続ける問題があった。
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
   if (url.pathname.startsWith('/api/')) return;
+  if (url.origin !== self.location.origin) return;
 
   event.respondWith(
-    caches.match(request).then((cached) => {
-      const network = fetch(request)
-        .then((response) => {
-          if (response.ok && url.origin === self.location.origin) {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-          }
-          return response;
-        })
-        .catch(() => cached);
-      return cached || network;
-    })
+    fetch(request)
+      .then((response) => {
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+        }
+        return response;
+      })
+      .catch(() => caches.match(request))
   );
 });
