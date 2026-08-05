@@ -1,3 +1,9 @@
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
+
 const EMPTY_GEOJSON = { type: 'FeatureCollection', features: [] };
 const PRIORITY_ORDER = { emergency: 0, high: 1, medium: 2 };
 const PRIORITY_LABELS = { emergency: '緊急', high: '高', medium: '中' };
@@ -9,6 +15,8 @@ const VERIFICATION_LABELS = {
 const LIFECYCLE_LABELS = { active: '発生中', ongoing: '継続', resolved: '解消', expired: '期限切れ', needs_review: '要再確認' };
 const INFORMATION_CLASS_LABELS = { official: '公式', media: '報道', reference: '参考' };
 const LOCATION_PRECISION_LABELS = { exact: '正確な地点', representative: '地域代表点', estimated: '推定位置', unknown: '位置不明' };
+const ROAD_STATUS_LABELS = { recently_passed: '直近に通行実績あり', restricted: '交通規制あり', closed: '通行止め', unknown: '通行状況不明' };
+const MARKER_ICONS = { warning: '⚠️', damage: '🏚️', road: '🛣️', road_closed: '🚫', shelter: '🏠', support: '🤝', other: '📍' };
 const TYPE_LABELS = {
   warning: '警報・注意',
   damage: '被害',
@@ -30,10 +38,10 @@ const state = {
   popup: null,
   selectedId: null,
   renderFrame: null,
-  dates: [],
-  selectedDate: null,
-  onsetDate: null,
-  allDates: false
+  events: [],
+  selectedEventKey: '',
+  timeBuckets: [],
+  selectedBucketIndex: null
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -78,15 +86,16 @@ function initializeMap() {
   const map = new maplibregl.Map({
     container: 'map',
     style: mapStyle(),
-    center: [130.78, 32.79],
-    zoom: 9.2,
-    minZoom: 5,
+    center: [138, 36],
+    zoom: 4.2,
+    minZoom: 3,
     maxZoom: 18,
     attributionControl: false
   });
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
   map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
   map.on('load', () => {
+    Object.entries(MARKER_ICONS).forEach(([name, emoji]) => map.addImage(`emoji-${name}`, createEmojiImage(emoji), { pixelRatio: 2 }));
     map.addSource('reports', { type: 'geojson', data: EMPTY_GEOJSON });
     map.addLayer({
       id: 'report-halo',
@@ -115,12 +124,26 @@ function initializeMap() {
         'circle-stroke-color': ['case', ['==', ['get', 'verification_status'], 'reference_unverified'], '#7b5f16', '#ffffff']
       }
     });
-    map.on('mouseenter', 'report-points', () => { map.getCanvas().style.cursor = 'pointer'; });
-    map.on('mouseleave', 'report-points', () => { map.getCanvas().style.cursor = ''; });
-    map.on('click', 'report-points', (event) => {
+    map.addLayer({
+      id: 'report-symbols',
+      type: 'symbol',
+      source: 'reports',
+      layout: {
+        'icon-image': ['concat', 'emoji-', ['get', 'marker_icon']],
+        'icon-size': ['interpolate', ['linear'], ['zoom'], 4, 0.72, 10, 0.92],
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true
+      }
+    });
+    const selectFeature = (event) => {
       const id = String(event.features?.[0]?.properties?.id ?? '');
       const report = state.reports.find((item) => String(item.id) === id);
       if (report) selectReport(report, false);
+    };
+    ['report-points', 'report-symbols'].forEach((layer) => {
+      map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
+      map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; });
+      map.on('click', layer, selectFeature);
     });
     state.mapReady = true;
     updateMap();
@@ -130,6 +153,20 @@ function initializeMap() {
     if (event?.error) $('#live').textContent = '地図タイルの一部を読み込めませんでした。';
   });
   state.map = map;
+}
+
+function createEmojiImage(emoji) {
+  const size = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext('2d');
+  context.clearRect(0, 0, size, size);
+  context.font = '42px "Segoe UI Emoji", "Apple Color Emoji", sans-serif';
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  context.fillText(emoji, size / 2, size / 2 + 2);
+  return context.getImageData(0, 0, size, size);
 }
 
 function priorityColorExpression() {
@@ -148,6 +185,9 @@ function normalizeReport(report) {
     ? report.information_class : report.category === 'official' ? 'official' : verificationStatus === 'reference_unverified' ? 'reference' : 'media';
   const locationPrecision = LOCATION_PRECISION_LABELS[report.location_precision]
     ? report.location_precision : Number.isFinite(latitude) && Number.isFinite(longitude) ? 'estimated' : 'unknown';
+  const roadStatus = ROAD_STATUS_LABELS[report.road_status] ? report.road_status : 'unknown';
+  const reportType = TYPE_LABELS[report.report_type] ? report.report_type : 'other';
+  const markerIcon = reportType === 'road' && roadStatus === 'closed' ? 'road_closed' : reportType;
   return {
     ...report,
     id: String(report.id),
@@ -155,7 +195,7 @@ function normalizeReport(report) {
     summary: String(report.summary || '詳細は原文をご確認ください。'),
     area: String(report.area && report.area !== 'unknown' ? report.area : '地域不明'),
     category: report.category === 'official' ? 'official' : 'news',
-    report_type: TYPE_LABELS[report.report_type] ? report.report_type : 'other',
+    report_type: reportType,
     priority: PRIORITY_LABELS[report.priority] ? report.priority : derivePriority(report),
     latitude: Number.isFinite(latitude) ? latitude : null,
     longitude: Number.isFinite(longitude) ? longitude : null,
@@ -163,6 +203,15 @@ function normalizeReport(report) {
     lifecycle_status: lifecycleStatus,
     information_class: informationClass,
     location_precision: locationPrecision,
+    road_status: roadStatus,
+    roadStatusLabel: ROAD_STATUS_LABELS[roadStatus],
+    markerIcon,
+    markerEmoji: MARKER_ICONS[markerIcon] || MARKER_ICONS.other,
+    event_key: String(report.event_key || ''),
+    event_name: String(report.event_name || ''),
+    event_kind: String(report.event_kind || ''),
+    eventTimestamp: timestamp(report.published_at || report.retrieved_at),
+    bucketStart: twoHourBucketStart(report.published_at || report.retrieved_at),
     revision_count: Number(report.revision_count || 0),
     dateKey: dateKeyJst(report.published_at || report.retrieved_at),
     statusLabel: VERIFICATION_LABELS[verificationStatus],
@@ -211,7 +260,7 @@ function filterReports() {
     return priorities.has(report.priority)
       && verifications.has(report.verification_status)
       && lifecycles.has(report.lifecycle_status)
-      && (state.allDates || !state.selectedDate || report.dateKey === state.selectedDate)
+      && (!state.selectedEventKey || (report.event_key === state.selectedEventKey && report.eventTimestamp < selectedBucketEnd()))
       && (!emergencyOnly || report.priority === 'emergency')
       && (!query || haystack.includes(query))
       && (!area || report.area === area)
@@ -247,42 +296,124 @@ function formatDateKey(value) {
   return `${year}年${month}月${day}日`;
 }
 
-function initializeTimeline() {
-  state.dates = [...new Set(state.reports.map((report) => report.dateKey).filter(Boolean))].sort();
-  const quakeReports = state.reports
-    .filter((report) => report.dateKey && /地震|震度|余震|緊急地震/.test(`${report.title} ${report.summary}`))
-    .sort((a, b) => timestamp(a.published_at) - timestamp(b.published_at));
-  state.onsetDate = quakeReports[0]?.dateKey || state.dates[0] || null;
-  state.selectedDate = state.dates.at(-1) || null;
-  state.allDates = false;
+function twoHourBucketStart(value) {
+  const date = new Date(value || '');
+  if (Number.isNaN(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23'
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const hour = Math.floor(Number(values.hour) / 2) * 2;
+  return Date.UTC(Number(values.year), Number(values.month) - 1, Number(values.day), hour - 9);
+}
 
+function selectedBucketEnd() {
+  const bucket = state.timeBuckets[state.selectedBucketIndex];
+  return Number.isFinite(bucket) ? bucket + (2 * 60 * 60 * 1000) : Number.POSITIVE_INFINITY;
+}
+
+function formatBucket(value) {
+  if (!Number.isFinite(value)) return 'イベント未選択';
+  return new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'Asia/Tokyo', year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false
+  }).format(new Date(value));
+}
+
+function initializeTimeline() {
+  const grouped = new Map();
+  state.reports.filter((report) => report.event_key && Number.isFinite(report.bucketStart)).forEach((report) => {
+    if (!grouped.has(report.event_key)) grouped.set(report.event_key, []);
+    grouped.get(report.event_key).push(report);
+  });
+  state.events = [...grouped.entries()].flatMap(([key, reports]) => {
+    const buckets = [...new Set(reports.map((report) => report.bucketStart))].sort((a, b) => a - b);
+    if (reports.length < 2 || buckets.length < 2) return [];
+    return [{ key, name: reports[0].event_name || key, reports, first: buckets[0], last: buckets.at(-1) }];
+  }).sort((a, b) => b.last - a.last);
+  state.selectedEventKey = '';
+  state.timeBuckets = [];
+  state.selectedBucketIndex = null;
+  const select = $('#event-select');
+  select.replaceChildren(new Option('イベントを選択', ''));
+  state.events.forEach((event) => select.append(new Option(`${event.name}（${event.reports.length}件）`, event.key)));
+  configureTimelineForEvent('');
+}
+
+function configureTimelineForEvent(eventKey) {
+  state.selectedEventKey = eventKey;
+  const event = state.events.find((item) => item.key === eventKey);
   const slider = $('#timeline-slider');
-  const enabled = state.dates.length > 0;
+  if (event) {
+    state.timeBuckets = [];
+    for (let bucket = event.first; bucket <= event.last; bucket += 2 * 60 * 60 * 1000) state.timeBuckets.push(bucket);
+    state.selectedBucketIndex = state.timeBuckets.length - 1;
+  } else {
+    state.timeBuckets = [];
+    state.selectedBucketIndex = null;
+  }
+  const enabled = Boolean(event && state.timeBuckets.length);
   slider.min = '0';
-  slider.max = String(Math.max(state.dates.length - 1, 0));
-  slider.value = String(Math.max(state.dates.length - 1, 0));
+  slider.max = String(Math.max(state.timeBuckets.length - 1, 0));
+  slider.value = String(Math.max(state.selectedBucketIndex ?? 0, 0));
   slider.disabled = !enabled;
-  ['#timeline-onset', '#timeline-current', '#timeline-all'].forEach((selector) => { $(selector).disabled = !enabled; });
-  $('#timeline-start').textContent = state.dates[0] ? formatDateKey(state.dates[0]).replace(/年|月/g, '/').replace('日', '') : '―';
-  $('#timeline-end').textContent = state.dates.at(-1) ? formatDateKey(state.dates.at(-1)).replace(/年|月/g, '/').replace('日', '') : '―';
+  ['#timeline-onset', '#timeline-current', '#timeline-clear'].forEach((selector) => { $(selector).disabled = !enabled; });
+  $('#timeline-start').textContent = enabled ? formatBucket(state.timeBuckets[0]) : '―';
+  $('#timeline-end').textContent = enabled ? formatBucket(state.timeBuckets.at(-1)) : '―';
   updateTimelineDisplay();
 }
 
 function updateTimelineDisplay() {
   const output = $('#timeline-date');
-  output.textContent = state.allDates ? '全期間' : formatDateKey(state.selectedDate);
-  $('#timeline-all').setAttribute('aria-pressed', String(state.allDates));
-  $('#timeline-help').textContent = selectedVerifications().has('reference_unverified')
-    ? '報道・参考（未確認）を含みます。発表日時と内容はリンク先の原文で確認してください。'
-    : '選択した日の確認済み・自動公開情報を表示します。';
+  output.textContent = state.selectedEventKey ? `${formatBucket(state.timeBuckets[state.selectedBucketIndex])}まで` : 'イベント未選択';
+  $('#timeline-help').textContent = state.selectedEventKey
+    ? '選択イベントを発生時から2時間単位で累積表示します。未確認情報は原文で確認してください。'
+    : '特定イベントを選ぶと、2時間ごとの経過を表示します。';
 }
 
 function render() {
   state.filtered = filterReports();
   updateTimelineDisplay();
   renderCounts();
+  renderSummary();
   renderList();
   updateMap();
+}
+
+function renderSummary() {
+  const panel = $('#summary-panel');
+  if (!panel) return;
+  const reports = state.filtered;
+  if (!reports.length) { panel.hidden = true; return; }
+  panel.hidden = false;
+
+  const priorityCounts = { emergency: 0, high: 0, medium: 0 };
+  const typeCounts = {};
+  reports.forEach((report) => {
+    if (priorityCounts[report.priority] !== undefined) priorityCounts[report.priority] += 1;
+    typeCounts[report.report_type] = (typeCounts[report.report_type] || 0) + 1;
+  });
+
+  const priorityBox = $('#summary-priority');
+  priorityBox.replaceChildren();
+  [['emergency', '緊急'], ['high', '高'], ['medium', '中']].forEach(([key, label]) => {
+    const cell = element('div', `summary-priority-cell ${key}`);
+    cell.append(element('strong', '', String(priorityCounts[key])));
+    cell.append(element('small', '', label));
+    priorityBox.append(cell);
+  });
+
+  const typeList = $('#summary-types');
+  typeList.replaceChildren();
+  Object.keys(TYPE_LABELS)
+    .filter((type) => typeCounts[type])
+    .sort((a, b) => typeCounts[b] - typeCounts[a])
+    .forEach((type) => {
+      const item = element('li', 'summary-type');
+      item.append(element('span', 'summary-type-icon', MARKER_ICONS[type] || MARKER_ICONS.other));
+      item.append(element('span', 'summary-type-label', TYPE_LABELS[type]));
+      item.append(element('strong', 'summary-type-count', String(typeCounts[type])));
+      typeList.append(item);
+    });
 }
 
 function scheduleRender() {
@@ -299,12 +430,13 @@ function renderCounts() {
   const lifecycles = selectedLifecycles();
   state.reports
     .filter((report) => verifications.has(report.verification_status) && lifecycles.has(report.lifecycle_status)
-      && (state.allDates || !state.selectedDate || report.dateKey === state.selectedDate))
+      && (!state.selectedEventKey || (report.event_key === state.selectedEventKey && report.eventTimestamp < selectedBucketEnd())))
     .forEach((report) => { totals[report.priority] += 1; });
   Object.entries(totals).forEach(([key, value]) => { $(`#count-${key}`).textContent = value; });
   $('#visible-count').textContent = state.filtered.length;
   const mapped = state.filtered.filter(hasCoordinates).length;
-  const period = state.allDates ? '全期間' : formatDateKey(state.selectedDate);
+  const event = state.events.find((item) => item.key === state.selectedEventKey);
+  const period = event ? `${event.name}・${formatBucket(state.timeBuckets[state.selectedBucketIndex])}まで` : '現在の全国情報';
   $('#result-status').textContent = `${period}：${state.filtered.length}件を表示・地図上${mapped}件（履歴全${state.reports.length}件）`;
 }
 
@@ -524,6 +656,7 @@ async function loadWeather() {
     $('#weather-wind').textContent = formatWeatherMetric(weather.wind_speed_10m);
     $('#weather-time').textContent = `${formatShortTime(weather.observed_at)}時点`;
     $('#weather-notice').textContent = weather.notice || 'モデルによる参考値です。';
+    renderHeatIndex(weather.heat_index);
     panel.setAttribute('aria-busy', 'false');
     panel.dataset.state = 'ready';
   } catch {
@@ -532,6 +665,17 @@ async function loadWeather() {
     panel.setAttribute('aria-busy', 'false');
     panel.dataset.state = 'error';
   }
+}
+
+function renderHeatIndex(heat) {
+  const box = $('#heat-index');
+  if (!box) return;
+  if (!heat || !Number.isFinite(Number(heat.wbgt_estimate))) { box.hidden = true; return; }
+  box.hidden = false;
+  box.dataset.level = heat.level || 'safe';
+  $('#heat-index-value').textContent = `${heat.wbgt_estimate}${heat.unit || '°C'}`;
+  $('#heat-index-level').textContent = heat.level_label || '';
+  $('#heat-index-note').textContent = heat.authority_note || '';
 }
 
 async function loadReports() {
@@ -567,31 +711,36 @@ function bindControls() {
   $$('.priority-toggle').forEach((input) => input.addEventListener('change', scheduleRender));
   $$('.verification-toggle').forEach((input) => input.addEventListener('change', scheduleRender));
   $$('.lifecycle-toggle').forEach((input) => input.addEventListener('change', scheduleRender));
+  $('#event-select').addEventListener('change', (event) => {
+    const eventKey = event.target.value;
+    if (eventKey) {
+      $('.verification-toggle[value="reference_unverified"]').checked = true;
+      setLifecycleSelection(['active', 'ongoing', 'resolved', 'expired', 'needs_review']);
+    }
+    configureTimelineForEvent(eventKey);
+    scheduleRender();
+    $('#live').textContent = eventKey ? '選択した災害イベントを2時間単位で表示します。' : 'イベントの時間絞り込みを解除しました。';
+  });
   $('#timeline-slider').addEventListener('input', (event) => {
-    state.allDates = false;
-    state.selectedDate = state.dates[Number(event.target.value)] || state.selectedDate;
+    state.selectedBucketIndex = Number(event.target.value);
     scheduleRender();
   });
   $('#timeline-onset').addEventListener('click', () => {
-    const reference = $('.verification-toggle[value="reference_unverified"]');
-    reference.checked = true;
-    setLifecycleSelection(['active', 'ongoing', 'resolved', 'expired', 'needs_review']);
-    state.allDates = false;
-    state.selectedDate = state.onsetDate;
-    $('#timeline-slider').value = String(Math.max(state.dates.indexOf(state.onsetDate), 0));
+    state.selectedBucketIndex = 0;
+    $('#timeline-slider').value = '0';
     scheduleRender();
-    $('#live').textContent = `${formatDateKey(state.onsetDate)}の発生当初情報を、未確認の報道・参考情報を含めて表示します。`;
+    $('#live').textContent = '選択イベントの発生時点を表示します。';
   });
   $('#timeline-current').addEventListener('click', () => {
-    $('.verification-toggle[value="reference_unverified"]').checked = false;
-    setLifecycleSelection(['active', 'ongoing']);
-    state.allDates = false;
-    state.selectedDate = state.dates.at(-1) || null;
-    $('#timeline-slider').value = String(Math.max(state.dates.length - 1, 0));
+    state.selectedBucketIndex = state.timeBuckets.length - 1;
+    $('#timeline-slider').value = String(Math.max(state.selectedBucketIndex, 0));
     scheduleRender();
   });
-  $('#timeline-all').addEventListener('click', () => {
-    state.allDates = true;
+  $('#timeline-clear').addEventListener('click', () => {
+    $('#event-select').value = '';
+    configureTimelineForEvent('');
+    $('.verification-toggle[value="reference_unverified"]').checked = false;
+    setLifecycleSelection(['active', 'ongoing']);
     scheduleRender();
   });
   form.addEventListener('reset', () => {
@@ -599,9 +748,8 @@ function bindControls() {
       $$('.priority-toggle').forEach((input) => { input.checked = true; });
       $$('.verification-toggle').forEach((input) => { input.checked = input.value !== 'reference_unverified'; });
       setLifecycleSelection(['active', 'ongoing']);
-      state.allDates = false;
-      state.selectedDate = state.dates.at(-1) || null;
-      $('#timeline-slider').value = String(Math.max(state.dates.length - 1, 0));
+      $('#event-select').value = '';
+      configureTimelineForEvent('');
       scheduleRender();
     }, 0);
   });

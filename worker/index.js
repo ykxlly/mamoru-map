@@ -540,7 +540,7 @@ async function currentWeather() {
   endpoint.search = new URLSearchParams({
     latitude: '32.8031',
     longitude: '130.7079',
-    current: 'temperature_2m,precipitation,wind_speed_10m',
+    current: 'temperature_2m,precipitation,wind_speed_10m,relative_humidity_2m',
     timezone: 'Asia/Tokyo',
     timeformat: 'unixtime',
     forecast_days: '1'
@@ -574,7 +574,9 @@ function normalizeOpenMeteo(source) {
   const temperature = finiteNumber(current?.temperature_2m);
   const precipitation = finiteNumber(current?.precipitation);
   const windSpeed = finiteNumber(current?.wind_speed_10m);
+  const humidity = finiteNumber(current?.relative_humidity_2m);
   if (!Number.isFinite(observedEpoch) || temperature === null || precipitation === null || windSpeed === null) return null;
+  const heat = estimateHeatIndex(temperature, humidity);
   return {
     location: { name: '熊本市中心部', latitude: Number(source.latitude), longitude: Number(source.longitude) },
     observed_at: new Date(observedEpoch * 1000).toISOString(),
@@ -582,6 +584,8 @@ function normalizeOpenMeteo(source) {
     temperature_2m: { value: temperature, unit: String(units?.temperature_2m || '°C') },
     precipitation: { value: precipitation, unit: String(units?.precipitation || 'mm') },
     wind_speed_10m: { value: windSpeed, unit: String(units?.wind_speed_10m || 'km/h') },
+    relative_humidity_2m: humidity === null ? null : { value: humidity, unit: String(units?.relative_humidity_2m || '%') },
+    heat_index: heat,
     model_timezone: String(source.timezone || 'Asia/Tokyo'),
     source: {
       name: 'Open-Meteo',
@@ -596,6 +600,31 @@ function normalizeOpenMeteo(source) {
 function finiteNumber(value) {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
+}
+
+// 屋外・日射なしを想定したWBGT近似（Ono & Tonouchi 2014 の簡易回帰）。
+// 環境省の実測WBGTとは異なる参考値。厳密な暑さ指数は環境省の発表を優先。
+function estimateHeatIndex(temperature, humidity) {
+  if (temperature === null || humidity === null) return null;
+  const rh = Math.min(100, Math.max(0, humidity));
+  const wbgt = 0.735 * temperature + 0.0374 * rh + 0.00292 * temperature * rh
+    + 7.619 * (rh / 100) - 4.557 * Math.pow(rh / 100, 2) - 0.0572 * temperature - 4.064;
+  const value = Math.round(wbgt * 10) / 10;
+  let level = 'safe';
+  let label = 'ほぼ安全';
+  if (value >= 31) { level = 'danger'; label = '危険'; }
+  else if (value >= 28) { level = 'severe-warning'; label = '厳重警戒'; }
+  else if (value >= 25) { level = 'warning'; label = '警戒'; }
+  else if (value >= 21) { level = 'caution'; label = '注意'; }
+  return {
+    wbgt_estimate: value,
+    unit: '°C',
+    level,
+    level_label: label,
+    method: '気温・湿度からの推定値（日射・輻射は未考慮）',
+    authority_note: '暑さ指数の公式値は環境省「熱中症予防情報サイト」を確認してください。',
+    authority_url: 'https://www.wbgt.env.go.jp/'
+  };
 }
 
 async function listArchiveReports(db) {

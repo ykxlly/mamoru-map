@@ -374,8 +374,46 @@ function render() {
   state.filtered = filterReports();
   updateTimelineDisplay();
   renderCounts();
+  renderSummary();
   renderList();
   updateMap();
+}
+
+function renderSummary() {
+  const panel = $('#summary-panel');
+  if (!panel) return;
+  const reports = state.filtered;
+  if (!reports.length) { panel.hidden = true; return; }
+  panel.hidden = false;
+
+  const priorityCounts = { emergency: 0, high: 0, medium: 0 };
+  const typeCounts = {};
+  reports.forEach((report) => {
+    if (priorityCounts[report.priority] !== undefined) priorityCounts[report.priority] += 1;
+    typeCounts[report.report_type] = (typeCounts[report.report_type] || 0) + 1;
+  });
+
+  const priorityBox = $('#summary-priority');
+  priorityBox.replaceChildren();
+  [['emergency', '緊急'], ['high', '高'], ['medium', '中']].forEach(([key, label]) => {
+    const cell = element('div', `summary-priority-cell ${key}`);
+    cell.append(element('strong', '', String(priorityCounts[key])));
+    cell.append(element('small', '', label));
+    priorityBox.append(cell);
+  });
+
+  const typeList = $('#summary-types');
+  typeList.replaceChildren();
+  Object.keys(TYPE_LABELS)
+    .filter((type) => typeCounts[type])
+    .sort((a, b) => typeCounts[b] - typeCounts[a])
+    .forEach((type) => {
+      const item = element('li', 'summary-type');
+      item.append(element('span', 'summary-type-icon', MARKER_ICONS[type] || MARKER_ICONS.other));
+      item.append(element('span', 'summary-type-label', TYPE_LABELS[type]));
+      item.append(element('strong', 'summary-type-count', String(typeCounts[type])));
+      typeList.append(item);
+    });
 }
 
 function scheduleRender() {
@@ -618,6 +656,7 @@ async function loadWeather() {
     $('#weather-wind').textContent = formatWeatherMetric(weather.wind_speed_10m);
     $('#weather-time').textContent = `${formatShortTime(weather.observed_at)}時点`;
     $('#weather-notice').textContent = weather.notice || 'モデルによる参考値です。';
+    renderHeatIndex(weather.heat_index);
     panel.setAttribute('aria-busy', 'false');
     panel.dataset.state = 'ready';
   } catch {
@@ -626,6 +665,17 @@ async function loadWeather() {
     panel.setAttribute('aria-busy', 'false');
     panel.dataset.state = 'error';
   }
+}
+
+function renderHeatIndex(heat) {
+  const box = $('#heat-index');
+  if (!box) return;
+  if (!heat || !Number.isFinite(Number(heat.wbgt_estimate))) { box.hidden = true; return; }
+  box.hidden = false;
+  box.dataset.level = heat.level || 'safe';
+  $('#heat-index-value').textContent = `${heat.wbgt_estimate}${heat.unit || '°C'}`;
+  $('#heat-index-level').textContent = heat.level_label || '';
+  $('#heat-index-note').textContent = heat.authority_note || '';
 }
 
 async function loadReports() {

@@ -3,19 +3,25 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="熊本県周辺の災害情報を、一次情報と確認状態付きで地図表示するサービス">
-  <title>まもるマップ | 熊本災害情報</title>
+  <meta name="description" content="日本全国の災害情報を、一次情報と確認状態付きで地図表示するサービス">
+  <title>まもるマップ | 日本全国の災害情報</title>
   <link rel="preconnect" href="https://unpkg.com">
   <link rel="preconnect" href="https://cyberjapandata.gsi.go.jp">
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" crossorigin="anonymous">
   <link rel="stylesheet" href="styles.css">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" href="/favicon.png" type="image/png">
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  <meta name="theme-color" content="#1d4e89">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="まもるマップ">
 </head>
 <body>
   <a class="skip-link" href="#event-list">情報一覧へ移動</a>
   <header class="app-header">
     <a class="brand" href="/" aria-label="まもるマップ トップ">
       <span class="brand-mark" aria-hidden="true">ま</span>
-      <span><strong>まもるマップ</strong><small>熊本災害情報・出典確認型</small></span>
+      <span><strong>まもるマップ</strong><small>日本全国・災害情報・出典確認型</small></span>
     </a>
     <div class="header-status">
       <span id="connection-badge" class="connection-badge" data-state="loading">取得中</span>
@@ -26,7 +32,7 @@
 
   <main class="app-shell">
     <section class="map-region" aria-labelledby="map-title">
-      <h1 id="map-title" class="visually-hidden">熊本県周辺の災害情報マップ</h1>
+      <h1 id="map-title" class="visually-hidden">日本全国の災害情報マップ</h1>
       <div id="map" role="region" aria-label="災害情報と履歴の地図"></div>
 
       <details class="layer-panel">
@@ -36,6 +42,13 @@
           <label><input class="priority-toggle" type="checkbox" value="emergency" checked> <span class="legend-dot emergency"></span>緊急</label>
           <label><input class="priority-toggle" type="checkbox" value="high" checked> <span class="legend-dot high"></span>高</label>
           <label><input class="priority-toggle" type="checkbox" value="medium" checked> <span class="legend-dot medium"></span>中</label>
+        </fieldset>
+        <fieldset>
+          <legend>ピンの絵文字</legend>
+          <div class="emoji-legend" aria-label="ピン絵文字の意味">
+            <span>⚠️ 警報・注意</span><span>🏚️ 被害</span><span>🚫 通行止め</span>
+            <span>🛣️ 道路規制・通行実績</span><span>🏠 避難所</span><span>🤝 支援</span><span>📍 その他</span>
+          </div>
         </fieldset>
         <fieldset>
           <legend>確認状態</legend>
@@ -58,21 +71,28 @@
         </fieldset>
       </details>
 
-      <div class="map-note"><strong>位置について</strong><span>地域概況のピンは市区町村中心付近を示す場合があります。</span></div>
+      <div class="map-note"><strong>位置・道路について</strong><span>代表点や推定位置を含みます。「通行実績」は現在の通行可を保証しません。規制情報と道路管理者の案内を優先してください。</span></div>
     </section>
 
     <aside class="sidebar" aria-labelledby="sidebar-title">
       <div class="sidebar-head">
         <p class="eyebrow">SOURCE → REVIEW → PUBLISH</p>
         <div class="title-row">
-          <div><h2 id="sidebar-title">公開中の災害情報</h2><p id="result-status" class="result-status" aria-live="polite">読み込み中です…</p></div>
+          <div><h2 id="sidebar-title">全国の災害情報</h2><p id="result-status" class="result-status" aria-live="polite">読み込み中です…</p></div>
           <span id="visible-count" class="visible-count">0</span>
         </div>
       </div>
 
+      <section id="summary-panel" class="summary-panel" aria-labelledby="summary-title" hidden>
+        <h3 id="summary-title" class="summary-title">いま表示中の集計</h3>
+        <div id="summary-priority" class="summary-priority" aria-label="緊急度別の件数"></div>
+        <ul id="summary-types" class="summary-types" aria-label="種類別の件数"></ul>
+        <p class="summary-note">表示中の絞り込み条件に一致する件数です。避難・救助の判断は公的機関の指示を優先してください。</p>
+      </section>
+
       <section id="weather-panel" class="weather-panel" aria-labelledby="weather-title" aria-busy="true">
         <div class="weather-heading">
-          <div><p class="weather-eyebrow">MODEL WEATHER</p><h3 id="weather-title">熊本市中心部の現在気象</h3></div>
+          <div><p class="weather-eyebrow">LOCAL REFERENCE WEATHER</p><h3 id="weather-title">参考気象・熊本市中心部</h3></div>
           <time id="weather-time">取得中</time>
         </div>
         <dl class="weather-metrics">
@@ -80,6 +100,14 @@
           <div><dt>降水量</dt><dd id="weather-precipitation">―</dd></div>
           <div><dt>風速</dt><dd id="weather-wind">―</dd></div>
         </dl>
+        <div id="heat-index" class="heat-index" hidden>
+          <div class="heat-index-main">
+            <span class="heat-index-eyebrow">暑さ指数（推定WBGT）</span>
+            <span id="heat-index-value" class="heat-index-value">―</span>
+            <span id="heat-index-level" class="heat-index-level">―</span>
+          </div>
+          <p id="heat-index-note" class="heat-index-note"></p>
+        </div>
         <p id="weather-notice" class="weather-notice" aria-live="polite">気象参考情報を読み込んでいます。</p>
         <a href="https://open-meteo.com/" target="_blank" rel="noreferrer noopener">Weather data by Open-Meteo.com</a>
       </section>
@@ -87,7 +115,7 @@
       <form id="filter-form" class="filter-form" action="/" method="get" role="search">
         <div class="search-field">
           <label for="search-query">地名・キーワードで探す</label>
-          <div class="search-control"><span aria-hidden="true">⌕</span><input id="search-query" name="q" type="search" autocomplete="off" enterkeyhint="search" placeholder="例：益城町、避難所、通行止め"></div>
+          <div class="search-control"><span aria-hidden="true">⌕</span><input id="search-query" name="q" type="search" autocomplete="off" enterkeyhint="search" placeholder="例：石川県、避難所、通行止め"></div>
         </div>
 
         <div class="priority-summary" aria-label="緊急度別件数">
@@ -97,20 +125,23 @@
         </div>
 
         <section class="timeline-panel" aria-labelledby="timeline-title">
-          <div class="timeline-heading"><h3 id="timeline-title">時間を遡る</h3><output id="timeline-date" for="timeline-slider">読み込み中</output></div>
+          <div class="timeline-heading"><h3 id="timeline-title">時間を遡る</h3><output id="timeline-date" for="timeline-slider">イベント未選択</output></div>
+          <label class="event-select-label" for="event-select">災害イベント
+            <select id="event-select"><option value="">イベントを選択</option></select>
+          </label>
           <input id="timeline-slider" type="range" min="0" max="0" value="0" step="1" disabled aria-describedby="timeline-help">
           <div class="timeline-ends" aria-hidden="true"><span id="timeline-start">―</span><span id="timeline-end">―</span></div>
           <div class="timeline-actions">
-            <button id="timeline-onset" type="button" disabled>発生当初（参考含む）</button>
-            <button id="timeline-current" type="button" disabled>現在</button>
-            <button id="timeline-all" type="button" disabled>全期間</button>
+            <button id="timeline-onset" type="button" disabled>発生時</button>
+            <button id="timeline-current" type="button" disabled>イベント最新</button>
+            <button id="timeline-clear" type="button" disabled>選択解除</button>
           </div>
-          <p id="timeline-help">選択した日の情報を表示します。参考情報は未確認のため原文を確認してください。</p>
+          <p id="timeline-help">特定イベントを選ぶと、2時間ごとの経過を表示します。</p>
         </section>
 
         <fieldset class="filter-grid">
           <legend>一覧の絞り込み</legend>
-          <label for="filter-area">市区町村<select id="filter-area" name="area"><option value="">すべて</option></select></label>
+          <label for="filter-area">地域<select id="filter-area" name="area"><option value="">すべて</option></select></label>
           <label for="filter-type">情報の種類<select id="filter-type" name="type"><option value="">すべて</option><option value="warning">警報・注意</option><option value="damage">被害</option><option value="road">道路・交通</option><option value="shelter">避難所</option><option value="support">支援</option><option value="other">その他</option></select></label>
           <label for="filter-sort">並び順<select id="filter-sort" name="sort"><option value="newest">発表日時が新しい順</option><option value="priority">緊急度が高い順</option><option value="updated">取得日時が新しい順</option></select></label>
         </fieldset>

@@ -83,6 +83,13 @@
         </div>
       </div>
 
+      <section id="summary-panel" class="summary-panel" aria-labelledby="summary-title" hidden>
+        <h3 id="summary-title" class="summary-title">いま表示中の集計</h3>
+        <div id="summary-priority" class="summary-priority" aria-label="緊急度別の件数"></div>
+        <ul id="summary-types" class="summary-types" aria-label="種類別の件数"></ul>
+        <p class="summary-note">表示中の絞り込み条件に一致する件数です。避難・救助の判断は公的機関の指示を優先してください。</p>
+      </section>
+
       <section id="weather-panel" class="weather-panel" aria-labelledby="weather-title" aria-busy="true">
         <div class="weather-heading">
           <div><p class="weather-eyebrow">LOCAL REFERENCE WEATHER</p><h3 id="weather-title">参考気象・熊本市中心部</h3></div>
@@ -93,6 +100,14 @@
           <div><dt>降水量</dt><dd id="weather-precipitation">―</dd></div>
           <div><dt>風速</dt><dd id="weather-wind">―</dd></div>
         </dl>
+        <div id="heat-index" class="heat-index" hidden>
+          <div class="heat-index-main">
+            <span class="heat-index-eyebrow">暑さ指数（推定WBGT）</span>
+            <span id="heat-index-value" class="heat-index-value">―</span>
+            <span id="heat-index-level" class="heat-index-level">―</span>
+          </div>
+          <p id="heat-index-note" class="heat-index-note"></p>
+        </div>
         <p id="weather-notice" class="weather-notice" aria-live="polite">気象参考情報を読み込んでいます。</p>
         <a href="https://open-meteo.com/" target="_blank" rel="noreferrer noopener">Weather data by Open-Meteo.com</a>
       </section>
