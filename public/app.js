@@ -274,7 +274,7 @@ function normalizeReport(report) {
     event_name: String(report.event_name || ''),
     event_kind: String(report.event_kind || ''),
     eventTimestamp: timestamp(report.published_at || report.retrieved_at),
-    bucketStart: twoHourBucketStart(report.published_at || report.retrieved_at),
+    bucketStart: bucketStartOf(report.published_at || report.retrieved_at),
     revision_count: Number(report.revision_count || 0),
     dateKey: dateKeyJst(report.published_at || report.retrieved_at),
     statusLabel: VERIFICATION_LABELS[verificationStatus],
@@ -359,20 +359,17 @@ function formatDateKey(value) {
   return `${year}年${month}月${day}日`;
 }
 
-function twoHourBucketStart(value) {
-  const date = new Date(value || '');
-  if (Number.isNaN(date.getTime())) return null;
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23'
-  }).formatToParts(date);
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  const hour = Math.floor(Number(values.hour) / 2) * 2;
-  return Date.UTC(Number(values.year), Number(values.month) - 1, Number(values.day), hour - 9);
+// 10分刻みのタイムライン。10分境界はUTC epochを丸めるだけでJSTでも:00/:10/…に一致する。
+const BUCKET_MS = 10 * 60 * 1000;
+
+function bucketStartOf(value) {
+  const time = new Date(value || '').getTime();
+  return Number.isNaN(time) ? null : Math.floor(time / BUCKET_MS) * BUCKET_MS;
 }
 
 function selectedBucketEnd() {
   const bucket = state.timeBuckets[state.selectedBucketIndex];
-  return Number.isFinite(bucket) ? bucket + (2 * 60 * 60 * 1000) : Number.POSITIVE_INFINITY;
+  return Number.isFinite(bucket) ? bucket + BUCKET_MS : Number.POSITIVE_INFINITY;
 }
 
 function formatBucket(value) {
@@ -391,7 +388,7 @@ function initializeTimeline() {
   state.events = [...grouped.entries()].flatMap(([key, reports]) => {
     const buckets = [...new Set(reports.map((report) => report.bucketStart))].sort((a, b) => a - b);
     if (reports.length < 2 || buckets.length < 2) return [];
-    return [{ key, name: reports[0].event_name || key, reports, first: buckets[0], last: buckets.at(-1) }];
+    return [{ key, name: reports[0].event_name || key, reports, buckets, first: buckets[0], last: buckets.at(-1) }];
   }).sort((a, b) => b.last - a.last);
   state.selectedEventKey = '';
   state.timeBuckets = [];
@@ -407,8 +404,9 @@ function configureTimelineForEvent(eventKey) {
   const event = state.events.find((item) => item.key === eventKey);
   const slider = $('#timeline-slider');
   if (event) {
-    state.timeBuckets = [];
-    for (let bucket = event.first; bucket <= event.last; bucket += 2 * 60 * 60 * 1000) state.timeBuckets.push(bucket);
+    // 情報がある10分バケットだけを停留点にする（疎なタイムライン）。
+    // 発生から選択時点までを累積表示するので、事故・火災が起きた順に一つの流れとして辿れる。
+    state.timeBuckets = event.buckets;
     state.selectedBucketIndex = state.timeBuckets.length - 1;
   } else {
     state.timeBuckets = [];
@@ -429,8 +427,8 @@ function updateTimelineDisplay() {
   const output = $('#timeline-date');
   output.textContent = state.selectedEventKey ? `${formatBucket(state.timeBuckets[state.selectedBucketIndex])}まで` : '災害を選択';
   $('#timeline-help').textContent = state.selectedEventKey
-    ? '選択した災害を発生時から2時間単位で累積表示します。未確認情報は原文で確認してください。'
-    : '災害を選ぶと、2時間ごとの経過を表示します。';
+    ? '発生時からの出来事を10分刻みで積み上げ、一つの流れとして表示します。未確認情報は原文で確認してください。'
+    : '災害を選ぶと、発生からの経過を10分刻みで表示します。';
 }
 
 function render() {
@@ -809,7 +807,7 @@ function bindControls() {
     }
     configureTimelineForEvent(eventKey);
     scheduleRender();
-    $('#live').textContent = eventKey ? '選択した災害を2時間単位で表示します。' : '災害の時間絞り込みを解除しました。';
+    $('#live').textContent = eventKey ? '選択した災害を10分刻みの流れで表示します。' : '災害の時間絞り込みを解除しました。';
   });
   $('#timeline-slider').addEventListener('input', (event) => {
     state.selectedBucketIndex = Number(event.target.value);
