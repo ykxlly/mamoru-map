@@ -734,7 +734,26 @@ async function archivedReports(db) {
     WHERE e.status IN ('published', 'expired', 'review')
     ORDER BY COALESCE(e.published_at, r.published_at, r.retrieved_at, e.created_at) DESC
     LIMIT 2000`).all();
-  return results.map(sanitizeArchiveReport);
+  // 気象庁命名地震（令和/平成/昭和 …地震）は、最新2000件の枠外でも全件取得し、発生時から遡れるよう統合する。
+  const named = await db.prepare(`SELECT e.id, e.category, e.report_type, e.area, e.summary,
+      COALESCE(e.published_at, r.published_at, r.retrieved_at) AS published_at,
+      e.latitude, e.longitude, e.location_method, e.auto_published, e.expires_at,
+      e.lifecycle_status, e.information_class, e.location_precision, e.last_verified_at, e.valid_until, e.last_changed_at,
+      e.road_status, e.road_observed_at,
+      r.retrieved_at, r.title, r.item_url, s.name AS source_name, e.status AS record_status,
+      (SELECT COUNT(*) FROM report_revisions rr WHERE rr.extracted_item_id = e.id) AS revision_count,
+      (SELECT MAX(rr.created_at) FROM report_revisions rr WHERE rr.extracted_item_id = e.id) AS last_revision_at
+    FROM extracted_items e
+    JOIN raw_items r ON r.id = e.raw_item_id
+    JOIN sources s ON s.id = r.source_id
+    WHERE e.status IN ('published', 'expired', 'review')
+      AND (r.title LIKE '%令和%地震%' OR r.title LIKE '%平成%地震%' OR r.title LIKE '%昭和%地震%'
+           OR e.summary LIKE '%令和%地震%' OR e.summary LIKE '%平成%地震%' OR e.summary LIKE '%昭和%地震%')
+    ORDER BY COALESCE(e.published_at, r.published_at, r.retrieved_at, e.created_at) DESC
+    LIMIT 1500`).all();
+  const byId = new Map();
+  for (const row of [...results, ...named.results]) byId.set(row.id, row);
+  return [...byId.values()].map(sanitizeArchiveReport);
 }
 
 function sanitizeArchiveReport(report) {
@@ -1392,6 +1411,13 @@ function deriveEventMetadata(report) {
     ['snow', '大雪・暴風雪', /大雪|暴風雪|凍結/],
     ['road', '道路障害', /通行止|交通規制|道路障害/]
   ];
+  // 気象庁命名地震（例:「令和8年熊本地震」）は日付・地域で分割せず、名称で一つのタイムラインに束ねる。
+  const namedQuake = text.match(/(?:令和|平成|昭和)\s*(?:\d+|元)\s*年[^\s。、,，0-9]{1,10}?地震/);
+  if (namedQuake) {
+    // 「令和8年度熊本地震」など年度表記の揺れを「令和8年熊本地震」に正規化し、同じ地震を1本に束ねる。
+    const name = namedQuake[0].replace(/\s+/g, '').replace(/年度/, '年');
+    return { event_key: `earthquake:named:${name}`, event_name: name, event_kind: 'earthquake' };
+  }
   const definition = definitions.find(([, , pattern]) => pattern.test(text));
   const timestamp = normalizeTimestamp(report?.published_at || report?.retrieved_at);
   if (!definition || !timestamp) return { event_key: null, event_name: null, event_kind: null };
