@@ -17,6 +17,11 @@ const INFORMATION_CLASS_LABELS = { official: '公式', media: '報道', referenc
 const LOCATION_PRECISION_LABELS = { exact: '正確な地点', representative: '地域代表点', estimated: '推定位置', unknown: '位置不明' };
 const ROAD_STATUS_LABELS = { recently_passed: '直近に通行実績あり', restricted: '交通規制あり', closed: '通行止め', unknown: '通行状況不明' };
 const MARKER_ICONS = { warning: '⚠️', damage: '🏚️', road: '🛣️', road_closed: '🚫', shelter: '🏠', support: '🤝', other: '📍' };
+// 「災害の記録」ドロップダウンの表示ラベル用。災害種別(event_kind)ごとの絵文字。
+// バックエンドの実 event_kind: earthquake / tsunami / volcano / typhoon / rain_flood(大雨・洪水を統合) / snow / road。
+// 未定義・未知の種別は ⚠️ にフォールバックする。絵文字は表示のみで value/event_key には含めない。
+const EVENT_KIND_ICONS = { earthquake: '🟥', tsunami: '🌊', typhoon: '🌀', rain_flood: '☔', volcano: '🌋', snow: '❄️', road: '🛣️' };
+function eventKindIcon(kind) { return EVENT_KIND_ICONS[kind] || '⚠️'; }
 const TYPE_LABELS = {
   warning: '警報・注意',
   damage: '被害',
@@ -394,8 +399,11 @@ function initializeTimeline() {
   state.timeBuckets = [];
   state.selectedBucketIndex = null;
   const select = $('#event-select');
-  select.replaceChildren(new Option('災害を選択', ''));
-  state.events.forEach((event) => select.append(new Option(`${event.name}（${event.reports.length}件）`, event.key)));
+  select.replaceChildren(new Option('📍 すべての災害', ''));
+  state.events.forEach((event) => {
+    const icon = eventKindIcon(event.reports[0]?.event_kind || String(event.key).split(':')[0]);
+    select.append(new Option(`${icon} ${event.name}（${event.reports.length}件）`, event.key));
+  });
   configureTimelineForEvent('');
 }
 
