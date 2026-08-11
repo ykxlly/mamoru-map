@@ -274,7 +274,7 @@
   .plateau-selection { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .45rem; margin: 0; padding: .6rem; border: 1px solid var(--line); border-radius: .5rem; }
   .plateau-selection legend, .plateau-capabilities h4, .plateau-actions h4 { color: var(--navy); font-size: .73rem; font-weight: 900; }
   .plateau-area-picker { display: grid; gap: .2rem; margin-block-start: .55rem; color: var(--muted); font-size: .68rem; font-weight: 800; }
-  .plateau-area-picker select { min-block-size: 2.5rem; inline-size: 100%; padding-inline: .55rem; border: 1px solid #b5c3c0; border-radius: .45rem; color: var(--ink); background: var(--surface); font-size: .76rem; }
+  .plateau-area-picker select { min-block-size: 2.75rem; inline-size: 100%; padding-inline: .55rem; border: 1px solid #b5c3c0; border-radius: .45rem; color: var(--ink); background: var(--surface); font-size: .76rem; }
   .plateau-selection .plateau-area-picker { margin: 0; }
   .plateau-selection-summary, .plateau-capabilities dl { grid-column: 1 / -1; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .22rem .55rem; margin: .25rem 0 0; font-size: .67rem; }
   .plateau-selection-summary dt, .plateau-capabilities dt { color: var(--muted); }
