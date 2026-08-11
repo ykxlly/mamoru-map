@@ -1,15 +1,18 @@
 export const OBSERVATION_TARGETS = [
   '/', '/api/health', '/api/reports?limit=1', '/api/weather?lat=37.75&lon=140.47',
-  '/api/plateau/regions', '/api/plateau/hazards', '/api/plateau/3d/config?municipality_code=13101',
-  '/app.js', '/styles.css', '/sw.js', '/manifest.json', '/plateau-3d.js', '/api/admin/reports'
+  '/api/plateau/regions', '/api/plateau/availability?municipality_code=13101', '/api/plateau/hazards',
+  '/api/plateau/hazards/config?municipality_code=13101', '/api/plateau/3d/config?municipality_code=13101',
+  '/app.js', '/plateau-location.js', '/styles.css', '/sw.js', '/manifest.json', '/plateau-3d.js', '/api/admin/reports'
 ];
 
 const EXTERNAL_DEPENDENCY_PATHS = new Set([
-  '/api/weather', '/api/plateau/regions', '/api/plateau/hazards', '/api/plateau/3d/config'
+  '/api/weather', '/api/plateau/regions', '/api/plateau/availability', '/api/plateau/hazards',
+  '/api/plateau/hazards/config', '/api/plateau/3d/config'
 ]);
 const STATIC_CONTENT_TYPES = new Map([
   ['/', ['text/html']], ['/app.js', ['javascript']], ['/styles.css', ['text/css']], ['/sw.js', ['javascript']],
-  ['/manifest.json', ['application/manifest+json', 'application/json']], ['/plateau-3d.js', ['javascript']]
+  ['/manifest.json', ['application/manifest+json', 'application/json']], ['/plateau-3d.js', ['javascript']],
+  ['/plateau-location.js', ['javascript']]
 ]);
 
 function safeErrorCode(error, timedOut) {

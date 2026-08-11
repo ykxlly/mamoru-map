@@ -17,4 +17,3 @@ assertSafeChange({ files: [{ path: relativePath }] });
 await mkdir('agent/generated', { recursive: true });
 await writeFile(relativePath, JSON.stringify({ issueId: issue.number, category: 'accessibility', status: 'preview', approvalRequired: true, productionDeploy: false }, null, 2));
 console.log(JSON.stringify({ issueId: issue.number, changedFiles: 1, path: relativePath }));
-

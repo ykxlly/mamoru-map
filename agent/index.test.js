@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { agentEnabled, analyze, assertSafeChange, builderEnabled, canAutoFix, fingerprint, observe, releaseGate } from './index.js';
+import { agentEnabled, analyze, assertSafeChange, builderEnabled, canAutoFix, fingerprint, OBSERVATION_TARGETS, observe, releaseGate } from './index.js';
 
 test('fingerprint is stable and includes the required dimensions', () => assert.equal(fingerprint({ environment: 'preview', targetId: '/api/health', category: 'major', errorCode: 'http_500', status: 500 }), 'preview:/api/health:major:http_500:500'));
 test('protected changes cannot be auto-applied', () => assert.throws(() => assertSafeChange({ files: [{ path: '/api/reports' }] }), /protected_target/));
@@ -36,4 +36,13 @@ test('external dependency failures do not become core connectivity failures', ()
   const issues = analyze({ observerRunId: 'run', results: [{ targetId: '/api/weather?lat=1&lon=1', environment: 'production', dependency: 'external', success: false, status: 502, errorCode: 'http_502' }] });
   assert.equal(issues[0].category, 'external_dependency');
   assert.equal(issues[0].severity, 'minor');
+});
+
+test('observer periodically checks the PLATEAU experience without reading response bodies', () => {
+  assert.ok(OBSERVATION_TARGETS.includes('/api/plateau/regions'));
+  assert.ok(OBSERVATION_TARGETS.includes('/api/plateau/availability?municipality_code=13101'));
+  assert.ok(OBSERVATION_TARGETS.includes('/api/plateau/hazards/config?municipality_code=13101'));
+  assert.ok(OBSERVATION_TARGETS.includes('/api/plateau/3d/config?municipality_code=13101'));
+  assert.ok(OBSERVATION_TARGETS.includes('/plateau-3d.js'));
+  assert.ok(OBSERVATION_TARGETS.includes('/plateau-location.js'));
 });

@@ -20,4 +20,3 @@ test('non-release workflows cannot access production environment or secrets', as
     assert.doesNotMatch(yaml, /wrangler deploy(?! --dry-run)/);
   }
 });
-
