@@ -92,9 +92,21 @@
         <section class="plateau-panel" aria-labelledby="plateau-title" aria-live="polite">
           <p class="panel-eyebrow">地域を選んで確認</p>
           <h3 id="plateau-title">PLATEAU・3D・想定リスク</h3>
-          <label class="plateau-area-picker" for="plateau-area-select">自治体
-            <select id="plateau-area-select" disabled><option value="">まず地図か一覧から地域を選択</option></select>
-          </label>
+          <p class="plateau-intro">PLATEAUは、国土交通省が整備する日本の3D都市モデルです。対応する都市では、建物や都市構造を3Dで確認できます。</p>
+          <fieldset class="plateau-selection">
+            <legend>表示地域</legend>
+            <label class="plateau-area-picker" for="plateau-prefecture-select">都道府県
+              <select id="plateau-prefecture-select" disabled><option value="">都道府県を選択</option></select>
+            </label>
+            <label class="plateau-area-picker" for="plateau-area-select">市区町村
+              <select id="plateau-area-select" disabled><option value="">市区町村を選択</option></select>
+            </label>
+            <dl class="plateau-selection-summary">
+              <dt>自治体コード</dt><dd id="plateau-selected-code">未選択</dd>
+              <dt>選択中の地域</dt><dd id="plateau-selected-region">未選択</dd>
+            </dl>
+          </fieldset>
+          <p id="plateau-region-mismatch" class="plateau-region-mismatch" role="status" hidden>現在の災害表示地域とは異なるPLATEAU地域を表示しています</p>
           <details id="plateau-region-browser" class="plateau-region-browser">
             <summary>PLATEAU対応自治体を探す</summary>
             <p>地図上の推定位置ではなく、公式データに登録された自治体名から選びます。</p>
@@ -105,6 +117,29 @@
             <ul id="plateau-region-list" class="plateau-region-list"></ul>
           </details>
           <p id="plateau-status" class="plateau-status" data-state="unknown">地図の絵文字、または一覧の情報を選ぶと対応状況を確認できます</p>
+          <section class="plateau-capabilities" aria-labelledby="plateau-capabilities-title">
+            <h4 id="plateau-capabilities-title">対応状況</h4>
+            <dl>
+              <dt>PLATEAUデータ対応</dt><dd id="plateau-capability-data">未確認</dd>
+              <dt>3D建築物対応</dt><dd id="plateau-capability-3d">未確認</dd>
+              <dt>土砂災害データ対応</dt><dd id="plateau-capability-landslide">未確認</dd>
+              <dt>その他の利用可能データ</dt><dd id="plateau-capability-other">未確認</dd>
+              <dt>整備年度</dt><dd id="plateau-capability-year">未確認</dd>
+              <dt>仕様バージョン</dt><dd id="plateau-capability-spec">未確認</dd>
+              <dt>最終確認日時</dt><dd id="plateau-capability-checked">未確認</dd>
+            </dl>
+          </section>
+          <section class="plateau-actions" aria-labelledby="plateau-actions-title">
+            <h4 id="plateau-actions-title">操作</h4>
+            <div>
+              <button id="plateau-view-region" type="button" disabled>地図でこの地域を見る</button>
+              <button id="plateau-open-3d" type="button" disabled>3Dで見る</button>
+              <button id="plateau-open-landslide" type="button" disabled>土砂災害を見る</button>
+              <button id="plateau-clear" type="button" disabled>選択を解除</button>
+              <button id="plateau-return-2d" type="button" disabled>2Dへ戻る</button>
+            </div>
+            <p id="plateau-map-position-status" class="plateau-map-position-status" aria-live="polite">自治体を選んでも地図や3Dは自動で切り替わりません。</p>
+          </section>
           <div id="plateau-details" class="plateau-details" hidden></div>
           <section id="plateau-3d-panel" class="plateau-3d-panel" aria-labelledby="plateau-3d-title" hidden>
             <h4 id="plateau-3d-title">建築物3Dモデル</h4>
@@ -112,7 +147,6 @@
             <div class="plateau-3d-controls" role="group" aria-describedby="plateau-3d-disclaimer">
               <label><input id="plateau-view-3d" type="checkbox" disabled> 地図を3Dに傾ける</label>
               <label><input id="plateau-buildings-3d" type="checkbox" disabled> 建築物3Dモデルを表示</label>
-              <button id="plateau-return-2d" type="button" disabled>軽量な2D表示に戻す</button>
             </div>
             <dl id="plateau-3d-meta" class="plateau-3d-meta" hidden></dl>
             <p id="plateau-3d-disclaimer" class="plateau-3d-disclaimer">建築物3Dモデルは都市構造を補完表示するもので、建物の安全性や現在の被害状況を示すものではありません。</p>
@@ -264,6 +298,6 @@
   <script type="importmap">
     {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.module.js","three/":"https://cdn.jsdelivr.net/npm/three@0.183.0/"}}
   </script>
-  <script src="app.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>

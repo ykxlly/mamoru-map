@@ -57,11 +57,19 @@ function ecefToThreeLocalRotation(lng, lat) {
   );
 }
 
-export async function showPlateauBuildings(map, tilesetUrl) {
+export async function showPlateauBuildings(map, tilesetUrl, options = {}) {
   if (!map?.isStyleLoaded?.() || !/^https:\/\/api\.plateauview\.mlit\.go\.jp\/datacatalog\/3dtiles\//.test(tilesetUrl)) throw new Error('invalid_3d_tileset');
   hidePlateauBuildings(map);
   resetDiagnostics(); checkpoint('map_ready', { status: 'loading' });
-  const runtime = { map, scene: null, renderer: null, tiles: null, tilesCamera: null, disposed: false, positioned: false, transform: null };
+  let resolveReady; let rejectReady; let settled = false;
+  const ready = new Promise((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
+  const finish = (error) => {
+    if (settled) return;
+    settled = true; clearTimeout(runtime.timeout);
+    if (error) rejectReady(error); else resolveReady();
+  };
+  const runtime = { map, scene: null, renderer: null, tiles: null, tilesCamera: null, disposed: false, positioned: false, transform: null, timeout: null };
+  runtime.timeout = setTimeout(() => finish(new Error('plateau_tileset_timeout')), Number(options.timeoutMs) || 15000);
   const layer = {
     id: LAYER_ID, type: 'custom', renderingMode: '3d',
     onAdd(mapInstance, gl) {
@@ -76,7 +84,10 @@ export async function showPlateauBuildings(map, tilesetUrl) {
       checkpoint('camera_registered');
       checkpoint('tileset_request_started');
       tiles.manager.onStart = () => checkpoint('child_tile_requested', { requestedTiles: diagnostics.requestedTiles + 1 });
-      tiles.manager.onError = (url) => checkpoint('rendering_failed', { status: 'error', lastError: safeError(url) });
+      tiles.manager.onError = (url) => {
+        checkpoint('rendering_failed', { status: 'error', lastError: safeError(url) });
+        if (!diagnostics.rootTilesetLoaded) finish(new Error('plateau_tileset_connection_failed'));
+      };
       tiles.addEventListener('load-model', () => {
         checkpoint('child_tile_loaded', { status: 'loading', loadedTiles: diagnostics.loadedTiles + 1, renderedObjects: countMeshes(tiles.group) });
       });
@@ -106,9 +117,10 @@ export async function showPlateauBuildings(map, tilesetUrl) {
         tiles.group.matrixAutoUpdate = false; tiles.group.updateMatrixWorld(true); mapInstance.triggerRepaint();
         checkpoint('model_bounds_computed', { modelCenter: [origin.lng, origin.lat, origin.alt], modelRadius: sphere.radius });
         checkpoint('camera_moved_to_model', { rootTilesetLoaded: true, rootChildren: tiles.root?.children?.length || 0, modelCenter: [origin.lng, origin.lat, origin.alt], modelRadius: sphere.radius, cameraPosition: mapInstance.getCenter().toArray(), renderedObjects: tiles.group.children.length });
+        finish();
       });
       checkpoint('renderer_initialized');
-      } catch (error) { checkpoint('rendering_failed', { status: 'error', lastError: safeError(error) }); }
+      } catch (error) { checkpoint('rendering_failed', { status: 'error', lastError: safeError(error) }); finish(error); }
     },
     render(_gl, args) {
       if (runtime.disposed || !runtime.renderer || !runtime.scene || !runtime.transform) return;
@@ -123,9 +135,10 @@ export async function showPlateauBuildings(map, tilesetUrl) {
       runtime.map.triggerRepaint();
       } catch (error) { checkpoint('rendering_failed', { status: 'error', lastError: safeError(error) }); }
     },
-    onRemove() { runtime.disposed = true; runtime.tiles?.dispose(); runtime.renderer?.dispose(); diagnostics.status = 'idle'; }
+    onRemove() { runtime.disposed = true; clearTimeout(runtime.timeout); runtime.tiles?.dispose(); runtime.renderer?.dispose(); diagnostics.status = 'idle'; }
   };
   map.addLayer(layer); active = runtime; checkpoint('custom_layer_added', { customLayerAdded: true });
+  await ready;
 }
 
 export function hidePlateauBuildings(map) {

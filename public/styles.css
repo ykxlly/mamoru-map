@@ -259,8 +259,16 @@
   }
   .plateau-panel { padding: .75rem .9rem .9rem; border-block-start: 1px solid var(--line); }
   .plateau-panel h3 { font-size: .8rem; }
+  .plateau-intro { margin-block: .45rem .7rem; color: var(--muted); font-size: .69rem; line-height: 1.55; }
+  .plateau-selection { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .45rem; margin: 0; padding: .6rem; border: 1px solid var(--line); border-radius: .5rem; }
+  .plateau-selection legend, .plateau-capabilities h4, .plateau-actions h4 { color: var(--navy); font-size: .73rem; font-weight: 900; }
   .plateau-area-picker { display: grid; gap: .2rem; margin-block-start: .55rem; color: var(--muted); font-size: .68rem; font-weight: 800; }
   .plateau-area-picker select { min-block-size: 2.5rem; inline-size: 100%; padding-inline: .55rem; border: 1px solid #b5c3c0; border-radius: .45rem; color: var(--ink); background: var(--surface); font-size: .76rem; }
+  .plateau-selection .plateau-area-picker { margin: 0; }
+  .plateau-selection-summary, .plateau-capabilities dl { grid-column: 1 / -1; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .22rem .55rem; margin: .25rem 0 0; font-size: .67rem; }
+  .plateau-selection-summary dt, .plateau-capabilities dt { color: var(--muted); }
+  .plateau-selection-summary dd, .plateau-capabilities dd { margin: 0; font-weight: 800; overflow-wrap: anywhere; }
+  .plateau-region-mismatch { margin: .55rem 0; padding: .45rem .55rem; border-inline-start: .25rem solid #b7791f; color: #6b4f12; background: #fff8df; font-size: .68rem; font-weight: 800; line-height: 1.45; }
   .plateau-region-browser { margin-block-start: .6rem; border: 1px solid var(--line); border-radius: .45rem; background: var(--surface-soft); }
   .plateau-region-browser summary { min-block-size: 2.6rem; display: flex; align-items: center; padding-inline: .6rem; color: var(--teal); font-size: .75rem; font-weight: 900; cursor: pointer; }
   .plateau-region-browser > p, .plateau-region-browser > label { display: grid; gap: .3rem; margin: .35rem .6rem; color: var(--muted); font-size: .67rem; line-height: 1.45; }
@@ -274,6 +282,13 @@
   .plateau-status[data-state="unsupported"], .plateau-status[data-state="unknown"] { color: var(--muted); }
   .plateau-status[data-state="error"] { color: var(--emergency); }
   .plateau-status[data-state="loading"] { color: var(--medium); }
+  .plateau-capabilities, .plateau-actions { margin-block-start: .65rem; padding-block-start: .55rem; border-block-start: 1px solid var(--line); }
+  .plateau-capabilities h4, .plateau-actions h4 { margin: 0 0 .4rem; }
+  .plateau-actions > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .4rem; }
+  .plateau-actions button { min-block-size: 2.45rem; padding: .35rem .5rem; border: 1px solid #b5c3c0; border-radius: .4rem; color: var(--teal); background: var(--surface); font: inherit; font-size: .69rem; font-weight: 900; cursor: pointer; }
+  .plateau-actions button:hover:not(:disabled), .plateau-actions button:focus-visible { border-color: var(--teal); background: var(--teal-soft); }
+  .plateau-actions button:disabled { color: var(--muted); cursor: not-allowed; opacity: .65; }
+  .plateau-map-position-status { margin: .45rem 0 0; color: var(--muted); font-size: .65rem; line-height: 1.45; }
   .plateau-dataset-list { display: grid; gap: .55rem; padding: 0; margin: .5rem 0; list-style: none; font-size: .7rem; }
   .plateau-dataset-list li { display: grid; gap: .1rem; padding: .5rem; border: 1px solid var(--line); border-radius: .45rem; background: var(--surface-soft); }
   .plateau-note, .plateau-source { color: var(--muted); font-size: .65rem; }
@@ -286,6 +301,10 @@
   .plateau-3d-controls button { justify-self: start; padding-inline: .55rem; border: 1px solid var(--line); border-radius: .35rem; color: var(--teal); background: var(--surface); font-weight: 800; }
   .plateau-3d-meta { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .18rem .45rem; margin: .5rem 0; font-size: .64rem; }
   .plateau-3d-meta dt { color: var(--muted); } .plateau-3d-meta dd { margin: 0; overflow-wrap: anywhere; }
+  @media (max-width: 480px) {
+    .plateau-selection, .plateau-actions > div { grid-template-columns: 1fr; }
+    .plateau-selection-summary { grid-column: 1; }
+  }
   .hazard-panel { margin-block-start: .7rem; padding-block-start: .65rem; border-block-start: 1px solid var(--line); }
   .hazard-panel h4 { margin: 0; font-size: .78rem; }
   .hazard-status, .hazard-disclaimer { margin: .35rem 0; color: var(--muted); font-size: .67rem; line-height: 1.5; }
