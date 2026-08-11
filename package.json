@@ -4,7 +4,9 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
-    "test": "node --test worker/index.test.js public/plateau-location.test.js"
+    "test": "node --test worker/index.test.js public/plateau-location.test.js",
+    "agent:test": "node --test agent/index.test.js",
+    "agent:observe": "node agent/run.js"
   },
   "devDependencies": {
     "wrangler": "^4.31.0"
