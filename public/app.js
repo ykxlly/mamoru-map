@@ -207,6 +207,7 @@ function initializeMap() {
       id: 'report-halo',
       type: 'circle',
       source: 'reports',
+      layout: { visibility: 'none' },
       paint: {
         'circle-radius': 13,
         'circle-color': priorityColorExpression(),
@@ -217,6 +218,7 @@ function initializeMap() {
       id: 'report-points',
       type: 'circle',
       source: 'reports',
+      layout: { visibility: 'none' },
       paint: {
         'circle-radius': ['interpolate', ['linear'], ['zoom'], 7, 5.5, 13, 8.5],
         'circle-color': priorityColorExpression(),
@@ -246,7 +248,7 @@ function initializeMap() {
       const report = state.reports.find((item) => String(item.id) === id);
       if (report) selectReport(report, false);
     };
-    ['report-points', 'report-symbols'].forEach((layer) => {
+    ['report-symbols'].forEach((layer) => {
       map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; });
       map.on('click', layer, selectFeature);
@@ -442,7 +444,7 @@ function normalizeReport(report) {
   const roadStatus = ROAD_STATUS_LABELS[report.road_status] ? report.road_status : 'unknown';
   const reportType = TYPE_LABELS[report.report_type] ? report.report_type : 'other';
   const eventKind = String(report.event_kind || '').trim();
-  const markerIcon = EVENT_KIND_ICONS[eventKind] ? eventKind : (reportType === 'road' ? 'road' : reportType);
+  const markerIcon = EVENT_KIND_ICONS[eventKind] ? eventKind : (reportType === 'road' ? 'road' : 'other');
   return {
     ...report,
     id: String(report.id),
