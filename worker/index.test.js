@@ -88,13 +88,13 @@ test('trust metadata helpers keep workflow, source class, position precision and
   assert.equal(defaultValidUntil('warning', '2026-08-04T00:00:00.000Z'), '2026-08-04T12:00:00.000Z');
 });
 
-test('Solafune GeoJSON parser keeps Kumamoto metadata and excludes out-of-area events', () => {
+test('Solafune GeoJSON parser keeps domestic event metadata without restricting regions', () => {
   const payload = JSON.stringify({ type: 'FeatureCollection', features: [
     { type: 'Feature', geometry: { type: 'Point', coordinates: [130.8, 32.8] }, properties: { id: 'kuma-1', title: '熊本県熊本地方の地震', source_name: '気象庁', source_type: '公的', source_time: '2026-08-03T16:24:00+09:00', source_url: 'https://www.data.jma.go.jp/example.xml', municipality: '熊本市', kind: '地震' } },
     { type: 'Feature', geometry: { type: 'Point', coordinates: [139.4, 37.0] }, properties: { id: 'other-1', title: '福島県会津の地震', source_name: '気象庁', source_time: '2026-08-03T15:00:00+09:00', source_url: 'https://www.data.jma.go.jp/other.xml' } }
   ] });
   const items = parseGeoJsonFeed(payload);
-  assert.equal(items.length, 1);
+  assert.equal(items.length, 2);
   assert.equal(items[0].guid, 'kuma-1');
   assert.equal(items[0].area, '熊本市');
   assert.equal(items[0].latitude, 32.8);
@@ -102,7 +102,7 @@ test('Solafune GeoJSON parser keeps Kumamoto metadata and excludes out-of-area e
   assert.doesNotMatch(items[0].summary, /本文/);
 });
 
-test('Toyota passable-route HTML parser extracts Kumamoto event metadata without copying map tiles', () => {
+test('Toyota passable-route HTML parser extracts domestic event metadata without copying map tiles', () => {
   const html = `<!doctype html><html><head><title>通れた道マップ</title></head><body>
     <div class="hd">お知らせ</div><div class="cont">7月28日の熊本県で発生した震度７の地震により表示エリアを変更しています。<br>通行実績と交通規制情報を表示しています。</div>
     <a href="#" onclick="searchList('130.697-32.65736');">熊本県宇城市震度7_202607281630</a>
@@ -110,9 +110,9 @@ test('Toyota passable-route HTML parser extracts Kumamoto event metadata without
     <script>const privateTile = 'https://tiles.example/private';</script>
   </body></html>`;
   const items = parseHtmlMedia(html, 'https://www.toyota.co.jp/jpn/auto/passable_route/map/', 'text/html; charset=utf-8');
-  assert.equal(items.length, 1);
+  assert.equal(items.length, 2);
   assert.equal(items[0].title, 'トヨタ 通れた道マップ：熊本県宇城市震度7_202607281630');
-  assert.equal(items[0].area, '宇城市');
+  assert.equal(items[0].area, '熊本県宇城市');
   assert.equal(items[0].longitude, 130.697);
   assert.equal(items[0].latitude, 32.65736);
   assert.equal(items[0].publishedAt, '2026-07-28T07:30:00.000Z');
@@ -132,13 +132,13 @@ test('HTML media parser extracts JSON-LD articles from registered public pages',
   assert.equal(item.publishedAt, '2026-08-03T03:30:00.000Z');
 });
 
-test('Toyota VICS parser keeps only non-personal road restrictions around the Kumamoto disaster area', () => {
+test('Toyota VICS parser keeps domestic non-personal road restrictions', () => {
   const payload = JSON.stringify({ resultcode: 0, results: [
     { RegulationCode: '1', RegulationName: '通行止', RegulationDetailCode: '0', RegulationDetailName: '詳細無し', CauseCode: '9', CauseName: '災害等', CauseDetailCode: '6', CauseDetailName: '道路損壊', Lat: 32.6484, Lon: 130.7082, Vin: 'never-export', Phone: 'never-export' },
     { RegulationCode: '1', RegulationName: '通行止', CauseCode: '9', CauseName: '災害等', Lat: 35.6, Lon: 139.7 }
   ] });
   const items = parseToyotaVics(payload, 'https://www.toyota.co.jp/jpn/auto/passable_route/map/Home/GetVicsReg');
-  assert.equal(items.length, 1);
+  assert.equal(items.length, 2);
   assert.equal(items[0].title, 'トヨタ道路情報：通行止（災害等・道路損壊）');
   assert.equal(items[0].locationMethod, 'toyota-vics-point');
   assert.doesNotMatch(JSON.stringify(items[0]), /never-export|Vin|Phone/);
