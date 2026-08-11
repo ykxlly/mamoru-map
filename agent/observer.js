@@ -2,7 +2,8 @@ export const OBSERVATION_TARGETS = [
   '/', '/api/health', '/api/reports?limit=1', '/api/weather?lat=37.75&lon=140.47',
   '/api/plateau/regions', '/api/plateau/availability?municipality_code=13101', '/api/plateau/hazards',
   '/api/plateau/hazards/config?municipality_code=13101', '/api/plateau/3d/config?municipality_code=13101',
-  '/app.js', '/plateau-location.js', '/styles.css', '/sw.js', '/manifest.json', '/plateau-3d.js', '/api/admin/reports'
+  '/app.js', '/plateau-location.js', '/styles.css', '/sw.js', '/manifest.json', '/plateau-3d.js',
+  '/icon-192.png', '/icon-512.png', '/icon-maskable-512.png', '/api/admin/reports'
 ];
 
 const EXTERNAL_DEPENDENCY_PATHS = new Set([
@@ -12,7 +13,8 @@ const EXTERNAL_DEPENDENCY_PATHS = new Set([
 const STATIC_CONTENT_TYPES = new Map([
   ['/', ['text/html']], ['/app.js', ['javascript']], ['/styles.css', ['text/css']], ['/sw.js', ['javascript']],
   ['/manifest.json', ['application/manifest+json', 'application/json']], ['/plateau-3d.js', ['javascript']],
-  ['/plateau-location.js', ['javascript']]
+  ['/plateau-location.js', ['javascript']], ['/icon-192.png', ['image/png']], ['/icon-512.png', ['image/png']],
+  ['/icon-maskable-512.png', ['image/png']]
 ]);
 
 function safeErrorCode(error, timedOut) {

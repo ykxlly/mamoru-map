@@ -20,6 +20,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Validate PWA and PLATEAU invariants
+        run: node --test tests/pwa.test.js tests/plateau-location.test.js
       - name: Observe allowlisted public endpoints
         env:
           MAMORU_AGENT_ENABLED: ${{ vars.MAMORU_AGENT_ENABLED }}

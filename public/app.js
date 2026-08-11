@@ -6,6 +6,32 @@ if ('serviceWorker' in navigator) {
   });
 }
 
+let deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', (event) => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+  const button = document.querySelector('#pwa-install');
+  if (button) button.hidden = false;
+});
+window.addEventListener('appinstalled', () => {
+  deferredInstallPrompt = null;
+  const button = document.querySelector('#pwa-install');
+  if (button) button.hidden = true;
+  const status = document.querySelector('#pwa-install-status');
+  if (status) status.textContent = 'まもるマップをインストールしました。';
+});
+window.addEventListener('DOMContentLoaded', () => {
+  document.querySelector('#pwa-install')?.addEventListener('click', async () => {
+    if (!deferredInstallPrompt) return;
+    const prompt = deferredInstallPrompt;
+    deferredInstallPrompt = null;
+    await prompt.prompt();
+    await prompt.userChoice;
+    const button = document.querySelector('#pwa-install');
+    if (button) button.hidden = true;
+  });
+});
+
 const EMPTY_GEOJSON = { type: 'FeatureCollection', features: [] };
 const HAZARD_STORAGE_KEY = 'mamoru-map-hazard-layers';
 const PLATEAU_3D_STORAGE_KEY = 'mamoru-map-3d-display';

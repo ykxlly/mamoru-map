@@ -38,11 +38,16 @@ test('external dependency failures do not become core connectivity failures', ()
   assert.equal(issues[0].severity, 'minor');
 });
 
-test('observer periodically checks the PLATEAU experience without reading response bodies', () => {
+test('observer periodically checks the PWA and PLATEAU experience without reading response bodies', () => {
   assert.ok(OBSERVATION_TARGETS.includes('/api/plateau/regions'));
   assert.ok(OBSERVATION_TARGETS.includes('/api/plateau/availability?municipality_code=13101'));
   assert.ok(OBSERVATION_TARGETS.includes('/api/plateau/hazards/config?municipality_code=13101'));
   assert.ok(OBSERVATION_TARGETS.includes('/api/plateau/3d/config?municipality_code=13101'));
   assert.ok(OBSERVATION_TARGETS.includes('/plateau-3d.js'));
   assert.ok(OBSERVATION_TARGETS.includes('/plateau-location.js'));
+  assert.ok(OBSERVATION_TARGETS.includes('/manifest.json'));
+  assert.ok(OBSERVATION_TARGETS.includes('/sw.js'));
+  assert.ok(OBSERVATION_TARGETS.includes('/icon-192.png'));
+  assert.ok(OBSERVATION_TARGETS.includes('/icon-512.png'));
+  assert.ok(OBSERVATION_TARGETS.includes('/icon-maskable-512.png'));
 });

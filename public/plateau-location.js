@@ -28,6 +28,35 @@ export function plateauCenterFromTileset(tileset) {
   return [lng, lat];
 }
 
+export function plateauGroundHeightFromTileset(tileset) {
+  const region = tileset?.root?.boundingVolume?.region;
+  const height = Array.isArray(region) ? Number(region[4]) : NaN;
+  if (!Number.isFinite(height) || height < -500 || height > 9000) throw new Error('plateau_ground_height_missing');
+  return height;
+}
+
+function nestedTilesetUrl(tileset, baseUrl) {
+  const candidates = [tileset?.root?.content?.uri, ...(tileset?.root?.children || []).map((child) => child?.content?.uri)];
+  const uri = candidates.find((value) => typeof value === 'string' && /\.json(?:$|\?)/i.test(value));
+  if (!uri) return null;
+  const resolved = new URL(uri, baseUrl);
+  const allowedHosts = new Set(['api.plateauview.mlit.go.jp', 'assets.cms.plateau.reearth.io']);
+  if (resolved.protocol !== 'https:' || !allowedHosts.has(resolved.hostname)) throw new Error('plateau_tileset_host_not_allowed');
+  return resolved.href;
+}
+
+export async function resolvePlateauGroundHeight(tilesetUrl, options = {}) {
+  let currentUrl = tilesetUrl;
+  let current = await fetchJsonWithRecovery(currentUrl, options);
+  for (let depth = 0; depth < 2; depth += 1) {
+    const nestedUrl = nestedTilesetUrl(current, currentUrl);
+    if (!nestedUrl) return plateauGroundHeightFromTileset(current);
+    currentUrl = nestedUrl;
+    current = await fetchJsonWithRecovery(currentUrl, options);
+  }
+  return plateauGroundHeightFromTileset(current);
+}
+
 export async function fetchJsonWithRecovery(url, options = {}) {
   const attempts = Number(options.attempts) || 2;
   const timeoutMs = Number(options.timeoutMs) || 10000;

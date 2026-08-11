@@ -3,6 +3,7 @@ import { TilesRenderer } from 'https://cdn.jsdelivr.net/npm/3d-tiles-renderer@0.
 import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.183.0/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'https://cdn.jsdelivr.net/npm/three@0.183.0/examples/jsm/loaders/DRACOLoader.js';
 import { KTX2Loader } from 'https://cdn.jsdelivr.net/npm/three@0.183.0/examples/jsm/loaders/KTX2Loader.js';
+import { resolvePlateauGroundHeight } from './plateau-location.js';
 
 const LAYER_ID = 'plateau-building-3d';
 let active = null;
@@ -61,6 +62,12 @@ export async function showPlateauBuildings(map, tilesetUrl, options = {}) {
   if (!map?.isStyleLoaded?.() || !/^https:\/\/api\.plateauview\.mlit\.go\.jp\/datacatalog\/3dtiles\//.test(tilesetUrl)) throw new Error('invalid_3d_tileset');
   hidePlateauBuildings(map);
   resetDiagnostics(); checkpoint('map_ready', { status: 'loading' });
+  let groundHeight = 0;
+  try {
+    groundHeight = await resolvePlateauGroundHeight(tilesetUrl, { attempts: 2, timeoutMs: Number(options.timeoutMs) || 15000 });
+  } catch {
+    checkpoint('ground_height_unavailable', { groundHeight: null, verticalOffset: 0 });
+  }
   let resolveReady; let rejectReady; let settled = false;
   const ready = new Promise((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
   const finish = (error) => {
@@ -68,7 +75,7 @@ export async function showPlateauBuildings(map, tilesetUrl, options = {}) {
     settled = true; clearTimeout(runtime.timeout);
     if (error) rejectReady(error); else resolveReady();
   };
-  const runtime = { map, scene: null, renderer: null, tiles: null, tilesCamera: null, disposed: false, positioned: false, transform: null, timeout: null };
+  const runtime = { map, scene: null, renderer: null, tiles: null, tilesCamera: null, disposed: false, positioned: false, transform: null, timeout: null, groundHeight };
   runtime.timeout = setTimeout(() => finish(new Error('plateau_tileset_timeout')), Number(options.timeoutMs) || 15000);
   const layer = {
     id: LAYER_ID, type: 'custom', renderingMode: '3d',
@@ -108,15 +115,16 @@ export async function showPlateauBuildings(map, tilesetUrl, options = {}) {
         checkpoint('tileset_json_loaded');
         const sphere = new THREE.Sphere(); tiles.getBoundingSphere(sphere);
         const center = sphere.center.clone();
-        const origin = ecefToLngLatAlt(center.x, center.y, center.z); runtime.transform = localTransform(mapInstance, [origin.lng, origin.lat, origin.alt]); runtime.positioned = true;
+        const origin = ecefToLngLatAlt(center.x, center.y, center.z);
+        runtime.transform = localTransform(mapInstance, [origin.lng, origin.lat, origin.alt - runtime.groundHeight]); runtime.positioned = true;
         checkpoint('tileset_parsed', { rootTilesetLoaded: true, rootChildren: tiles.root?.children?.length || 0 });
         checkpoint('root_tile_created');
         mapInstance.easeTo({ center: [origin.lng, origin.lat], zoom: Math.max(mapInstance.getZoom(), 15), pitch: Math.max(mapInstance.getPitch(), 55), bearing: mapInstance.getBearing(), duration: 0 });
         const rotation = ecefToThreeLocalRotation(origin.lng, origin.lat);
         tiles.group.matrix.copy(new THREE.Matrix4().multiplyMatrices(rotation, new THREE.Matrix4().makeTranslation(-center.x, -center.y, -center.z)));
         tiles.group.matrixAutoUpdate = false; tiles.group.updateMatrixWorld(true); mapInstance.triggerRepaint();
-        checkpoint('model_bounds_computed', { modelCenter: [origin.lng, origin.lat, origin.alt], modelRadius: sphere.radius });
-        checkpoint('camera_moved_to_model', { rootTilesetLoaded: true, rootChildren: tiles.root?.children?.length || 0, modelCenter: [origin.lng, origin.lat, origin.alt], modelRadius: sphere.radius, cameraPosition: mapInstance.getCenter().toArray(), renderedObjects: tiles.group.children.length });
+        checkpoint('model_bounds_computed', { modelCenter: [origin.lng, origin.lat, origin.alt], modelRadius: sphere.radius, groundHeight: runtime.groundHeight, verticalOffset: -runtime.groundHeight });
+        checkpoint('camera_moved_to_model', { rootTilesetLoaded: true, rootChildren: tiles.root?.children?.length || 0, modelCenter: [origin.lng, origin.lat, origin.alt], modelRadius: sphere.radius, groundHeight: runtime.groundHeight, verticalOffset: -runtime.groundHeight, cameraPosition: mapInstance.getCenter().toArray(), renderedObjects: tiles.group.children.length });
         finish();
       });
       checkpoint('renderer_initialized');

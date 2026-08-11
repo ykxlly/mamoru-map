@@ -148,6 +148,17 @@
     font-weight: 700;
     text-decoration: none;
   }
+  .pwa-install {
+    min-block-size: 2.75rem;
+    padding-inline: .85rem;
+    border: 1px solid var(--teal);
+    border-radius: .55rem;
+    color: #fff;
+    background: var(--teal);
+    font-size: .76rem;
+    font-weight: 800;
+    cursor: pointer;
+  }
 
   .app-shell {
     block-size: calc(100dvh - var(--header-size));
@@ -1071,6 +1082,7 @@
   .app-header { padding-inline: .75rem; }
   .brand small,
   .admin-link { display: none; }
+  .pwa-install { max-inline-size: 7rem; padding-inline: .55rem; line-height: 1.2; }
   .header-status { gap: .35rem; }
   .map-region { min-block-size: 20rem; }
   .layer-panel {

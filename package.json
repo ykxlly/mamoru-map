@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
-    "test": "node --test worker/index.test.js tests/plateau-location.test.js",
+    "test": "node --test worker/index.test.js tests/plateau-location.test.js tests/pwa.test.js",
     "agent:test": "node --test agent/index.test.js agent/workflow.test.js",
     "agent:observe": "node agent/run.js"
   },
