@@ -11,6 +11,19 @@ not_found_handling = "single-page-application"
 [triggers]
 crons = ["*/15 * * * *"]
 
+[[queues.producers]]
+binding = "PLATEAU_SYNC_QUEUE"
+queue = "mamoru-map-plateau-sync"
+
+[[queues.consumers]]
+queue = "mamoru-map-plateau-sync"
+max_batch_size = 5
+max_batch_timeout = 10
+max_retries = 3
+retry_delay = 30
+max_concurrency = 1
+dead_letter_queue = "mamoru-map-plateau-sync-dlq"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "mamoru-map"
