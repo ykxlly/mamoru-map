@@ -122,6 +122,15 @@
     border-radius: 50%;
     background: currentColor;
   }
+  .connection-badge[data-state="connected"] {
+    min-block-size: 0;
+    padding: 0;
+    border-color: transparent;
+    color: var(--muted);
+    background: transparent;
+    font-size: .65rem;
+  }
+  .connection-badge[data-state="connected"]::before { display: none; }
   .connection-badge[data-state="error"] {
     color: var(--emergency);
     border-color: #e6b2ae;

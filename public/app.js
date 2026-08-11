@@ -427,10 +427,22 @@ function createEmojiImage(emoji) {
   canvas.height = size;
   const context = canvas.getContext('2d');
   context.clearRect(0, 0, size, size);
-  context.font = '42px "Segoe UI Emoji", "Apple Color Emoji", sans-serif';
+  context.save();
+  context.shadowColor = 'rgba(19, 58, 73, .22)';
+  context.shadowBlur = 5;
+  context.beginPath();
+  context.arc(size / 2, size / 2, 23, 0, Math.PI * 2);
+  context.fillStyle = '#ffffff';
+  context.fill();
+  context.shadowColor = 'transparent';
+  context.lineWidth = 2;
+  context.strokeStyle = '#6b8084';
+  context.stroke();
+  context.restore();
+  context.font = '30px "Segoe UI Emoji", "Apple Color Emoji", sans-serif';
   context.textAlign = 'center';
   context.textBaseline = 'middle';
-  context.fillText(emoji, size / 2, size / 2 + 2);
+  context.fillText(emoji, size / 2, size / 2 + 1);
   return context.getImageData(0, 0, size, size);
 }
 
