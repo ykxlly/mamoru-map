@@ -1,0 +1,27 @@
+name: autonomous-agent-preview
+on:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 * * * *'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm test
+      - run: npx wrangler deploy --dry-run --outdir=dist
+      - name: Stage 1 observer and analyst
+        env: { MAMORU_AGENT_TARGET_URL: ${{ vars.MAMORU_AGENT_TARGET_URL }} }
+        run: npm run agent:observe
+      - uses: actions/upload-artifact@v4
+        with: { name: agent-stage-1-report, path: artifacts/agent/stage-1-report.json }
+      - name: Preview smoke test
+        if: ${{ vars.MAMORU_AGENT_PREVIEW_URL != '' }}
+        env: { PREVIEW_URL: ${{ vars.MAMORU_AGENT_PREVIEW_URL }} }
+        run: node --input-type=module -e "const r=await fetch(process.env.PREVIEW_URL+'/api/health'); if(!r.ok) throw new Error('preview health '+r.status)"
