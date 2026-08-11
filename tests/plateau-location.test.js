@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fetchJsonWithRecovery, plateauCenterFromTileset } from './plateau-location.js';
+import { fetchJsonWithRecovery, plateauCenterFromTileset } from '../public/plateau-location.js';
 
 test('公式tilesetのregion境界から中心を算出する', () => {
   const radians = (degrees) => degrees * Math.PI / 180;
