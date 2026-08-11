@@ -736,6 +736,12 @@ function buildReportCard(report) {
   target.append(element('span', 'event-title', `${report.markerEmoji} ${report.title}`));
   target.append(element('span', 'event-place', `⌖ ${report.area}`));
   target.append(element('span', 'event-summary', report.summary));
+  if (report.report_type === 'road') {
+    const road = element('span', `road-status road-${report.road_status}`);
+    road.append(element('strong', '', `🚧 ${report.roadStatusLabel}`));
+    road.append(element('small', '', `確認時刻: ${formatShortTime(report.last_verified_at || report.retrieved_at)}。現在の通行可否は道路管理者の案内を確認してください。`));
+    target.append(road);
+  }
   card.append(target);
 
   const source = element('div', 'event-source');
@@ -1072,6 +1078,7 @@ function showPopup(report) {
   content.append(element('p', `popup-status ${report.verification_status}`, report.statusLabel));
   content.append(element('p', `popup-lifecycle ${report.lifecycle_status}`, `${report.lifecycleLabel}・${report.informationClassLabel}`));
   content.append(element('p', 'popup-location', `位置：${report.locationPrecisionLabel}`));
+  if (report.report_type === 'road') content.append(element('p', `popup-road-status road-${report.road_status}`, `🚧 ${report.roadStatusLabel}。現在の通行可否は道路管理者の案内を確認してください。`));
   content.append(element('p', 'popup-summary', report.summary));
   const itemUrl = safeUrl(report.item_url);
   if (itemUrl) {

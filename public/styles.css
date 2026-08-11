@@ -898,6 +898,11 @@
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 3;
   }
+  .road-status { display: grid; gap: .15rem; margin-block-start: .6rem; padding: .5rem .6rem; border-inline-start: .25rem solid #8a5a2b; border-radius: .35rem; color: #654215; background: #fff8e9; text-align: start; }
+  .road-status strong { font-size: .73rem; }
+  .road-status small { color: #5f625f; font-size: .65rem; line-height: 1.45; }
+  .road-status.road-closed { border-inline-start-color: var(--emergency); background: #fff0ee; }
+  .road-status.road-restricted { border-inline-start-color: #d5881a; background: #fff7e7; }
   .event-source {
     display: flex;
     flex-wrap: wrap;
@@ -984,6 +989,8 @@
   .popup-status.reference_unverified { color: #755a14; }
   .popup-lifecycle { margin-block-start: .2rem; color: var(--navy); font-size: .68rem; font-weight: 900; }
   .popup-location { margin-block-start: .15rem; color: var(--muted); font-size: .66rem; }
+  .popup-road-status { margin-block-start: .4rem; padding: .45rem .5rem; border-inline-start: .22rem solid #8a5a2b; border-radius: .3rem; color: #654215; background: #fff8e9; font-size: .67rem; font-weight: 800; line-height: 1.5; }
+  .popup-road-status.road-closed { border-inline-start-color: var(--emergency); background: #fff0ee; }
   .popup-summary { margin-block-start: .4rem; color: #4c5f66; font-size: .73rem; }
   .popup-link { display: inline-block; margin-block-start: .55rem; font-size: .72rem; font-weight: 800; }
 
