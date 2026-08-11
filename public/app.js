@@ -5,6 +5,10 @@ if ('serviceWorker' in navigator) {
 }
 
 const EMPTY_GEOJSON = { type: 'FeatureCollection', features: [] };
+const HAZARD_STORAGE_KEY = 'mamoru-map-hazard-layers';
+const HAZARD_STYLE = {
+  landslide: { color: '#8a5a2b', outline: '#5e3c1f', pattern: '斜線' }
+};
 const PRIORITY_ORDER = { emergency: 0, high: 1, medium: 2 };
 const PRIORITY_LABELS = { emergency: '緊急', high: '高', medium: '中' };
 const VERIFICATION_LABELS = {
@@ -20,7 +24,7 @@ const MARKER_ICONS = { warning: '⚠️', damage: '🏚️', road: '🛣️', ro
 // 「災害の記録」ドロップダウンの表示ラベル用。災害種別(event_kind)ごとの絵文字。
 // バックエンドの実 event_kind: earthquake / tsunami / volcano / typhoon / rain_flood(大雨・洪水を統合) / snow / road。
 // 未定義・未知の種別は ⚠️ にフォールバックする。絵文字は表示のみで value/event_key には含めない。
-const EVENT_KIND_ICONS = { earthquake: '🫨', tsunami: '🌊', typhoon: '🌀', rain_flood: '☔', volcano: '🌋', snow: '❄️', road: '🚧' };
+const EVENT_KIND_ICONS = { earthquake: '🟥', tsunami: '🌊', typhoon: '🌀', rain_flood: '☔', volcano: '🌋', snow: '❄️', road: '🛣️' };
 function eventKindIcon(kind) { return EVENT_KIND_ICONS[kind] || '⚠️'; }
 const TYPE_LABELS = {
   warning: '警報・注意',
@@ -46,7 +50,13 @@ const state = {
   events: [],
   selectedEventKey: '',
   timeBuckets: [],
-  selectedBucketIndex: null
+  selectedBucketIndex: null,
+  plateauRequest: 0,
+  hazardRequest: 0,
+  hazardAbort: null,
+  hazardConfigs: new Map(),
+  hazardBound: new Set(),
+  hazardEnabled: new Set(),
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -161,6 +171,19 @@ function initializeMap() {
   map.on('error', (event) => {
     if (event?.error) $('#live').textContent = '地図タイルの一部を読み込めませんでした。';
   });
+  map.on('error', (event) => {
+    const sourceId = event?.sourceId || '';
+    const failed = [...state.hazardConfigs.values()].find((config) => hazardIds(config.hazardType).source === sourceId);
+    if (!failed) return;
+    state.hazardEnabled.delete(failed.hazardType);
+    [hazardIds(failed.hazardType).fill, hazardIds(failed.hazardType).line].forEach((id) => {
+      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'none');
+    });
+    const input = [...document.querySelectorAll('#hazard-controls input')].find((item) => item.getAttribute('aria-label') === `${failed.label}の想定リスクを表示`);
+    if (input) input.checked = false;
+    const status = $('#hazard-status'); if (status) status.textContent = `${failed.label}レイヤーの配信を読み込めませんでした。現在の災害情報は引き続き表示されます。`;
+    saveHazardSelection(); renderHazardLegend();
+  });
   state.map = map;
 }
 
@@ -202,6 +225,82 @@ function addReferenceLayer(map, kind, color) {
       .setHTML(referencePopupHtml(kind, props))
       .addTo(map);
   });
+}
+
+function hazardIds(hazardType) {
+  return { source: `plateau-hazard-${hazardType}`, fill: `plateau-hazard-${hazardType}-fill`, line: `plateau-hazard-${hazardType}-line` };
+}
+
+function addHazardLayer(config) {
+  const map = state.map;
+  if (!map || !state.mapReady || !map.isStyleLoaded() || !config?.available || config.format !== 'MVT (TileJSON)') return false;
+  const ids = hazardIds(config.hazardType);
+  if (!map.getSource(ids.source)) map.addSource(ids.source, { type: 'vector', url: config.tilesUrl, attribution: config.attribution || '国土交通省 PLATEAU' });
+  const style = HAZARD_STYLE[config.hazardType] || HAZARD_STYLE.landslide;
+  const before = map.getLayer('report-halo') ? 'report-halo' : undefined;
+  const addedFill = !map.getLayer(ids.fill);
+  if (addedFill) map.addLayer({
+    id: ids.fill, type: 'fill', source: ids.source, 'source-layer': config.layerName, minzoom: config.minZoom ?? 0, maxzoom: config.maxZoom ?? 24,
+    layout: { visibility: 'none' }, paint: { 'fill-color': style.color, 'fill-opacity': 0.28 }
+  }, before);
+  if (!map.getLayer(ids.line)) map.addLayer({
+    id: ids.line, type: 'line', source: ids.source, 'source-layer': config.layerName, minzoom: config.minZoom ?? 0, maxzoom: config.maxZoom ?? 24,
+    layout: { visibility: 'none' }, paint: { 'line-color': style.outline, 'line-width': 1.35, 'line-opacity': 0.8, 'line-dasharray': [2, 1.5] }
+  }, before);
+  if (addedFill && !state.hazardBound.has(config.hazardType)) {
+    map.on('click', ids.fill, (event) => showHazardPopup(event, state.hazardConfigs.get(config.hazardType)));
+    map.on('mouseenter', ids.fill, () => { map.getCanvas().style.cursor = 'pointer'; });
+    map.on('mouseleave', ids.fill, () => { map.getCanvas().style.cursor = ''; });
+    state.hazardBound.add(config.hazardType);
+  }
+  return true;
+}
+
+function removeHazardLayers() {
+  const map = state.map; if (!map) return;
+  [...state.hazardConfigs.values()].forEach((config) => {
+    const ids = hazardIds(config.hazardType);
+    if (map.getLayer(ids.line)) map.removeLayer(ids.line);
+    if (map.getLayer(ids.fill)) map.removeLayer(ids.fill);
+    if (map.getSource(ids.source)) map.removeSource(ids.source);
+  });
+  state.hazardEnabled.clear();
+}
+
+function setHazardVisibility(config, visible) {
+  const ids = hazardIds(config.hazardType);
+  if (!addHazardLayer(config)) return false;
+  [ids.fill, ids.line].forEach((id) => {
+    if (state.map.getLayer(id)) state.map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
+  });
+  if (visible) state.hazardEnabled.add(config.hazardType); else state.hazardEnabled.delete(config.hazardType);
+  saveHazardSelection();
+  renderHazardLegend();
+  return true;
+}
+
+function showHazardPopup(event, config) {
+  if (!config) return;
+  const props = event.features?.[0]?.properties || {};
+  const content = element('div', 'popup-content');
+  content.append(element('div', 'popup-priority', `${config.label}（想定リスク）`));
+  const fields = [
+    ['想定浸水深または区域区分', props.description || props.rank || props.areaType || 'データなし'],
+    ['市区町村', props.cityName || props.municipality || config.municipalityCode || 'データなし'],
+    ['整備年度', config.datasetYear || 'データなし'],
+    ['出典', config.sourceName || 'データなし'],
+    ['データ確認日時', config.lastCheckedAt ? formatShortTime(config.lastCheckedAt) : 'データなし']
+  ];
+  fields.forEach(([label, value]) => content.append(element('p', 'popup-summary', `${label}: ${value}`)));
+  new maplibregl.Popup({ closeButton: true, maxWidth: '20rem' }).setLngLat(event.lngLat).setDOMContent(content).addTo(state.map);
+}
+
+function loadSavedHazardSelection() {
+  try { return new Set(JSON.parse(localStorage.getItem(HAZARD_STORAGE_KEY) || '[]').filter((value) => typeof value === 'string')); } catch { return new Set(); }
+}
+
+function saveHazardSelection() {
+  try { localStorage.setItem(HAZARD_STORAGE_KEY, JSON.stringify([...state.hazardEnabled])); } catch { /* storage is optional */ }
 }
 
 function referencePopupHtml(kind, props) {
@@ -399,7 +498,7 @@ function initializeTimeline() {
   state.timeBuckets = [];
   state.selectedBucketIndex = null;
   const select = $('#event-select');
-  select.replaceChildren(new Option('🗺️ すべての災害', ''));
+  select.replaceChildren(new Option('📍 すべての災害', ''));
   state.events.forEach((event) => {
     const icon = eventKindIcon(event.reports[0]?.event_kind || String(event.key).split(':')[0]);
     select.append(new Option(`${icon} ${event.name}（${event.reports.length}件）`, event.key));
@@ -628,6 +727,8 @@ function hasCoordinates(report) {
 
 function selectReport(report, moveMap) {
   state.selectedId = report.id;
+  loadPlateauAvailability(report);
+  loadHazardConfig(report);
   $$('.event-card').forEach((card) => { card.dataset.selected = String(card.dataset.id === report.id); });
   if (!hasCoordinates(report) || !state.mapReady) {
     $('#live').textContent = 'この情報には地図上の位置がありません。原文で場所をご確認ください。';
@@ -638,6 +739,107 @@ function selectReport(report, moveMap) {
   }
   showPopup(report);
   $('#live').textContent = `${report.area}の情報を地図に表示しました。`;
+}
+
+function setPlateauStatus(status, message) {
+  const target = $('#plateau-status');
+  if (!target) return;
+  target.dataset.state = status;
+  target.textContent = message;
+}
+
+function renderPlateauDetails(datasets) {
+  const details = $('#plateau-details');
+  if (!details) return;
+  details.replaceChildren();
+  const list = element('ul', 'plateau-dataset-list');
+  datasets.forEach((dataset) => {
+    const item = element('li');
+    item.append(element('strong', '', dataset.city_name || dataset.municipality_code));
+    item.append(element('span', '', `データセット: ${dataset.feature_types_json || '記載なし'}`));
+    item.append(element('span', '', `整備年度: ${dataset.dataset_year || '記載なし'}`));
+    item.append(element('span', '', `仕様バージョン: ${dataset.specification_version || '記載なし'}`));
+    list.append(item);
+  });
+  details.append(list);
+  details.hidden = false;
+}
+
+function renderHazardControls(hazards) {
+  const panel = $('#hazard-panel'); const controls = $('#hazard-controls'); const status = $('#hazard-status');
+  if (!panel || !controls || !status) return;
+  panel.hidden = false; controls.replaceChildren();
+  state.hazardConfigs = new Map(hazards.map((hazard) => [hazard.hazardType, hazard]));
+  const available = hazards.filter((hazard) => hazard.available);
+  status.textContent = available.length ? '想定リスクは初期状態で非表示です。必要なレイヤーだけ表示してください。' : 'MapLibreで直接表示できる想定リスクデータはありません。';
+  const saved = loadSavedHazardSelection();
+  hazards.forEach((hazard) => {
+    const label = element('label', 'hazard-control'); label.dataset.available = String(Boolean(hazard.available));
+    const input = document.createElement('input'); input.type = 'checkbox'; input.disabled = !hazard.available; input.checked = false;
+    input.setAttribute('aria-label', `${hazard.label}の想定リスクを表示`);
+    const detail = element('small', '', hazard.available ? `整備年度: ${hazard.datasetYear || 'データなし'} / 出典: ${hazard.sourceName || 'データなし'} / 最終確認: ${hazard.lastCheckedAt ? formatShortTime(hazard.lastCheckedAt) : 'データなし'}` : hazard.reason || 'データなし');
+    input.addEventListener('change', () => { if (!setHazardVisibility(hazard, input.checked)) { input.checked = false; status.textContent = `${hazard.label}レイヤーを表示できませんでした。`; } });
+    label.append(input, element('strong', '', hazard.label), detail); controls.append(label);
+    if (hazard.available && saved.has(hazard.hazardType)) input.checked = setHazardVisibility(hazard, true);
+  });
+  renderHazardLegend();
+}
+
+function renderHazardLegend() {
+  const legend = $('#hazard-legend'); if (!legend) return;
+  legend.replaceChildren();
+  const visible = [...state.hazardEnabled].map((type) => state.hazardConfigs.get(type)).filter(Boolean);
+  visible.forEach((hazard) => {
+    const style = HAZARD_STYLE[hazard.hazardType] || HAZARD_STYLE.landslide;
+    const item = element('div', 'hazard-legend-item'); const swatch = element('span', 'hazard-swatch'); swatch.style.color = style.outline;
+    item.append(swatch, element('span', '', `${hazard.label}（半透明・${style.pattern}輪郭）`)); legend.append(item);
+  });
+  legend.hidden = visible.length === 0;
+}
+
+async function loadHazardConfig(report) {
+  const panel = $('#hazard-panel'); const code = String(report?.municipality_code || report?.city_code || '').trim();
+  if (!/^\d{5}$/.test(code)) { if (panel) panel.hidden = true; return; }
+  state.hazardAbort?.abort(); removeHazardLayers(); state.hazardConfigs = new Map(); state.hazardAbort = new AbortController();
+  const requestId = ++state.hazardRequest; if (panel) panel.hidden = false;
+  const status = $('#hazard-status'); if (status) status.textContent = '想定リスク設定を読込中…';
+  try {
+    const response = await fetch(`${apiBase}/api/plateau/hazards/config?municipality_code=${encodeURIComponent(code)}`, { headers: { accept: 'application/json' }, signal: state.hazardAbort.signal, priority: 'low' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
+    if (requestId !== state.hazardRequest || state.selectedId !== report.id) return;
+    renderHazardControls(payload.hazards || []);
+  } catch (error) {
+    if (error.name === 'AbortError' || requestId !== state.hazardRequest) return;
+    if (status) status.textContent = '想定リスク設定を取得できませんでした。現在の災害情報は引き続き表示されます。';
+  }
+}
+
+async function loadPlateauAvailability(report) {
+  const details = $('#plateau-details');
+  if (details) { details.hidden = true; details.replaceChildren(); }
+  const code = String(report?.municipality_code || report?.city_code || '').trim();
+  if (!/^\d{5}$/.test(code)) {
+    setPlateauStatus('unknown', '地域を選択してください');
+    return;
+  }
+  const requestId = ++state.plateauRequest;
+  setPlateauStatus('loading', '読込中…');
+  try {
+    const response = await fetch(`${apiBase}/api/plateau/availability?municipality_code=${encodeURIComponent(code)}`, { headers: { accept: 'application/json' }, priority: 'low' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
+    if (requestId !== state.plateauRequest || state.selectedId !== report.id) return;
+    if (payload.supported && payload.datasets?.length) {
+      setPlateauStatus('supported', 'PLATEAU対応地域');
+      renderPlateauDetails(payload.datasets);
+    } else {
+      setPlateauStatus('unsupported', 'PLATEAU未対応地域');
+    }
+  } catch {
+    if (requestId !== state.plateauRequest) return;
+    setPlateauStatus('error', 'PLATEAU対応状況を取得できませんでした');
+  }
 }
 
 function showPopup(report) {
