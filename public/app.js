@@ -692,6 +692,7 @@ function renderCounts() {
     .forEach((report) => { totals[report.priority] += 1; });
   Object.entries(totals).forEach(([key, value]) => { $(`#count-${key}`).textContent = value; });
   $('#visible-count').textContent = state.filtered.length;
+  $('#drawer-visible-count').textContent = state.filtered.length;
   const mapped = state.filtered.filter(hasCoordinates).length;
   const event = state.events.find((item) => item.key === state.selectedEventKey);
   const period = event ? `${event.name}・${formatBucket(state.timeBuckets[state.selectedBucketIndex])}まで` : '現在の全国情報';
@@ -852,11 +853,14 @@ function syncPlateauAreaSelection(report) {
 
 function selectReport(report, moveMap) {
   state.selectedId = report.id;
+  const drawer = $('#event-list-drawer');
+  if (drawer && !drawer.open) drawer.open = true;
   syncPlateauAreaSelection(report);
   loadPlateauAvailability(report);
   loadPlateau3dConfig(report);
   loadHazardConfig(report);
   $$('.event-card').forEach((card) => { card.dataset.selected = String(card.dataset.id === report.id); });
+  document.querySelector(`.event-card[data-id="${CSS.escape(String(report.id))}"]`)?.scrollIntoView({ block: 'nearest', behavior: reducedMotion ? 'auto' : 'smooth' });
   if (!hasCoordinates(report) || !state.mapReady) {
     $('#live').textContent = 'この情報には地図上の位置がありません。原文で場所をご確認ください。';
     return;
@@ -1196,6 +1200,8 @@ async function loadReports() {
 }
 
 function bindControls() {
+  const drawer = $('#event-list-drawer');
+  if (drawer && window.matchMedia('(max-width: 58rem)').matches) drawer.open = false;
   const form = $('#filter-form');
   form.addEventListener('submit', (event) => { event.preventDefault(); scheduleRender(); });
   $('#search-query').addEventListener('input', scheduleRender);

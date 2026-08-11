@@ -208,7 +208,13 @@
         <a href="/api/reports.geojson" download>GeoJSON出力</a>
       </div>
 
-      <section id="event-list" class="event-list" aria-label="公開情報一覧" tabindex="-1" aria-busy="true"></section>
+      <details id="event-list-drawer" class="event-list-drawer" open>
+        <summary>
+          <span><strong>災害情報一覧</strong><small>地図の絵文字と連動</small></span>
+          <span><output id="drawer-visible-count" for="event-list">0</output> 件</span>
+        </summary>
+        <section id="event-list" class="event-list" aria-label="公開情報一覧" tabindex="-1" aria-busy="true"></section>
+      </details>
 
       <section class="lifeline-panel" aria-labelledby="lifeline-title">
         <h3 id="lifeline-title">停電・断水などライフライン情報</h3>

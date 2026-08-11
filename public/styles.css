@@ -767,6 +767,32 @@
     text-decoration: none;
   }
 
+  .event-list-drawer {
+    border-block-start: 1px solid var(--line);
+    background: #fff;
+  }
+  .event-list-drawer > summary {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: 2;
+    min-block-size: 3.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    padding-inline: 1.35rem;
+    color: var(--navy);
+    background: #f5f9f8;
+    cursor: pointer;
+    list-style: none;
+  }
+  .event-list-drawer > summary::-webkit-details-marker { display: none; }
+  .event-list-drawer > summary strong { display: block; font-size: .9rem; }
+  .event-list-drawer > summary small { display: block; margin-block-start: .15rem; color: var(--muted); font-size: .66rem; font-weight: 700; }
+  .event-list-drawer > summary > span:last-child { display: inline-flex; align-items: center; gap: .2rem; color: var(--teal); font-size: .75rem; font-weight: 850; }
+  .event-list-drawer > summary > span:last-child::after { content: "⌄"; margin-inline-start: .35rem; font-size: 1rem; }
+  .event-list-drawer[open] > summary > span:last-child::after { transform: rotate(180deg); }
+  #drawer-visible-count { min-inline-size: 2.5rem; padding: .28rem .45rem; border-radius: 999px; color: #fff; background: var(--teal); text-align: center; }
   .event-list { min-block-size: 8rem; }
   .event-card {
     position: relative;
@@ -1019,6 +1045,8 @@
   .filter-form,
   .event-card,
   .sidebar-foot { padding-inline: 1rem; }
+  .event-list-drawer > summary { min-block-size: 4rem; padding-inline: 1rem; }
+  .event-list-drawer > summary strong { font-size: 1rem; }
   .weather-panel { margin-inline: 1rem; }
   .list-guide { margin-inline: 1rem; }
   .export-row { padding-inline: 1rem; }
