@@ -1,0 +1,8 @@
+{
+  "number": 1,
+  "title": "Agent safety test: ARIA mock validation only",
+  "body": "Accessibility validation in agent-owned generated output only.",
+  "labels": [
+    { "name": "agent-safe" }
+  ]
+}
