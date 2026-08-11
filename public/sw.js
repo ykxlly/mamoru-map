@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mamoru-map-shell-v5';
+const CACHE_NAME = 'mamoru-map-shell-v6';
 const SHELL_ASSETS = ['/', '/index.html', '/styles.css', '/app.js', '/plateau-3d.js', '/manifest.json'];
 
 self.addEventListener('install', (event) => {
@@ -24,15 +24,19 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname.startsWith('/api/')) return;
   if (url.origin !== self.location.origin) return;
 
+  const cacheable = request.mode !== 'navigate' && /\.(?:js|css|json|png|webp|svg)$/i.test(url.pathname);
   event.respondWith(
     fetch(request)
       .then((response) => {
-        if (response.ok) {
+        if (cacheable && response.status === 200 && response.type === 'basic') {
           const clone = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
         }
         return response;
       })
-      .catch(() => caches.match(request))
+      .catch(async () => {
+        if (request.mode === 'navigate') return (await caches.match('/')) || Response.error();
+        return (await caches.match(request)) || Response.error();
+      })
   );
 });
