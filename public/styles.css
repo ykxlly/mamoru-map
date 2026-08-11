@@ -191,6 +191,9 @@
     inset-inline-start: 1rem;
     z-index: 10;
     inline-size: min(17rem, calc(100% - 2rem));
+    max-block-size: calc(100% - 2rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
     border: 1px solid rgb(255 255 255 / 75%);
     border-radius: .75rem;
     background: rgb(255 255 255 / 94%);
