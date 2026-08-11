@@ -7,7 +7,7 @@ name: Guarded low-risk automatic release
       issue_number: { required: true, type: string }
       fingerprint: { required: true, type: string }
       severity: { required: true, type: choice, options: [minor, accessibility] }
-      preview_url: { required: true, type: string }
+      preview_run_id: { required: true, type: string }
       rollback_deployment_id: { required: true, type: string }
       desktop_confirmed: { required: true, type: boolean, default: false }
       mobile_390_confirmed: { required: true, type: boolean, default: false }
@@ -58,9 +58,26 @@ jobs:
           echo "$labels" | tr ',' '\n' | grep -Fx agent-safe
           if gh issue view "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --json comments --jq '.comments[].body' | grep -F "AUTO_RELEASE_SUCCESS fingerprint=$FINGERPRINT"; then exit 1; fi
           echo "labels=$labels" >> "$GITHUB_OUTPUT"
+      - name: Verify successful Preview run for candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIEW_RUN_ID: ${{ inputs.preview_run_id }}
+          TARGET_COMMIT: ${{ inputs.target_commit }}
+        shell: bash
+        run: |
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PREVIEW_RUN_ID" --jq .head_sha)" = "$TARGET_COMMIT"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PREVIEW_RUN_ID" --jq .conclusion)" = success
+      - name: Start isolated local Preview
+        shell: bash
+        run: |
+          npx --yes wrangler@4.120.1 d1 execute mamoru-map --local --file=./schema.sql
+          npx --yes wrangler@4.120.1 dev --local --port 8787 --var ADMIN_TOKEN:preview-placeholder > /tmp/mamoru-preview.log 2>&1 &
+          for attempt in {1..30}; do curl --fail --silent http://127.0.0.1:8787/api/health && exit 0; sleep 1; done
+          cat /tmp/mamoru-preview.log
+          exit 1
       - name: Preview smoke test
         env:
-          PREVIEW_URL: ${{ inputs.preview_url }}
+          PREVIEW_URL: http://127.0.0.1:8787
         run: node agent/smoke-check.js
       - run: node agent/rollback-dry-run.js "${{ inputs.rollback_deployment_id }}"
       - name: Deterministic release policy
