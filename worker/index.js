@@ -94,6 +94,8 @@ async function route(request, env, url) {
   if (request.method === 'GET' && url.pathname === '/api/admin/plateau/sync/runs') return plateauSyncRuns(env.DB, url);
   if (request.method === 'GET' && url.pathname === '/api/plateau/regions') return listPlateauRegions(env.DB);
   if (request.method === 'GET' && url.pathname === '/api/plateau/availability') return plateauAvailability(env.DB, url);
+  if (request.method === 'GET' && url.pathname === '/api/plateau/3d/availability') return plateau3dAvailability(env.DB, url);
+  if (request.method === 'GET' && url.pathname === '/api/plateau/3d/config') return plateau3dConfig(env.DB, url);
   if (request.method === 'GET' && url.pathname === '/api/plateau/hazards') return plateauHazards(env.DB);
   if (request.method === 'GET' && url.pathname === '/api/plateau/hazards/availability') return plateauHazardAvailability(env.DB, url);
   if (request.method === 'GET' && url.pathname === '/api/plateau/hazards/config') return plateauHazardConfig(env.DB, url);
@@ -1781,6 +1783,50 @@ async function plateauAvailability(db, url) {
     dataset_year, specification_version, feature_types_json, source_url, distribution_url, license_name, attribution_text,
     is_latest, is_available, last_checked_at FROM plateau_datasets WHERE municipality_code = ? AND is_available = 1 ORDER BY is_latest DESC, dataset_year DESC`).bind(code).all();
   return jsonWithHeaders({ municipality_code: code, supported: results.length > 0, datasets: results }, 200, { 'cache-control': 'public, max-age=300' });
+}
+
+async function plateau3dAvailability(db, url) {
+  const result = await plateau3dConfigPayload(db, url);
+  return result instanceof Response ? result : jsonWithHeaders({
+    available: result.available, municipalityCode: result.municipalityCode, reason: result.reason || null,
+    datasetYear: result.datasetYear, specificationVersion: result.specificationVersion, format: result.format,
+    lastCheckedAt: result.lastCheckedAt
+  }, 200, { 'cache-control': 'public, max-age=300' });
+}
+
+async function plateau3dConfig(db, url) {
+  const result = await plateau3dConfigPayload(db, url);
+  return result instanceof Response ? result : jsonWithHeaders(result, 200, { 'cache-control': 'public, max-age=300' });
+}
+
+async function plateau3dConfigPayload(db, url) {
+  const municipalityCode = String(url.searchParams.get('municipality_code') || '').trim();
+  if (!/^\d{5}$/.test(municipalityCode)) return jsonWithHeaders({ error: 'invalid_municipality_code' }, 400, { 'cache-control': 'public, max-age=300' });
+  const { results } = await db.prepare(`SELECT external_dataset_id, municipality_code, city_name, dataset_year, specification_version,
+    distribution_url, license_name, attribution_text, last_checked_at, is_latest
+    FROM plateau_datasets WHERE municipality_code = ? AND is_available = 1 ORDER BY is_latest DESC, dataset_year DESC`).bind(municipalityCode).all();
+  const row = results.find((item) => plateau3dTileset(item.distribution_url)
+    && /^\d{5}_bldg_lod1$/.test(String(item.external_dataset_id || '')))
+    || results.find((item) => plateau3dTileset(item.distribution_url)
+      && /^\d{5}_bldg_lod\d+(?:_no_texture)?$/.test(String(item.external_dataset_id || '')));
+  const base = {
+    municipalityCode, available: Boolean(row), datasetYear: row?.dataset_year || null,
+    specificationVersion: row?.specification_version || null, format: row ? '3D Tiles 1.0' : null,
+    tilesetUrl: row?.distribution_url || null, tilesUrl: null, minimumZoom: row ? 15 : null, maximumZoom: row ? 18 : null,
+    attribution: row?.attribution_text || '国土交通省 Project PLATEAU', sourceName: '国土交通省 Project PLATEAU',
+    lastCheckedAt: row?.last_checked_at || null,
+    disclaimer: '建築物3Dモデルは都市構造を補完表示するもので、建物の安全性や現在の被害状況を示すものではありません。避難や安全確保は最新の公式情報を確認してください。'
+  };
+  return row ? base : { ...base, reason: 'ブラウザで安全に表示できる、公式の建築物3D Tilesデータがありません。' };
+}
+
+function plateau3dTileset(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && url.hostname === 'api.plateauview.mlit.go.jp'
+      && /^\/datacatalog\/3dtiles\/\d{5}-bldg-lod\d+-(?:texture|notexture)-(?:latest|\d{4})\/tileset\.json$/.test(url.pathname)
+      && !url.search && !url.hash;
+  } catch { return false; }
 }
 
 async function plateauHazards(db) {
