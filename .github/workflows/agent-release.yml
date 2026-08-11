@@ -4,6 +4,7 @@ on:
     inputs:
       preview_url: { required: true, type: string }
       deployment_id: { required: true, type: string }
+      rollback_deployment_id: { required: true, type: string }
       commit: { required: true, type: string }
 permissions: { contents: read }
 jobs:
@@ -14,6 +15,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { ref: ${{ inputs.commit }} }
+      - name: Verify immutable release inputs
+        run: test "$(git rev-parse HEAD)" = "${{ inputs.commit }}" && test -n "${{ inputs.deployment_id }}" && test -n "${{ inputs.rollback_deployment_id }}"
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm }
       - run: npm ci && npm test
