@@ -1,0 +1,10 @@
+import { mkdir, writeFile } from 'node:fs/promises';
+import { analyze, observe } from './index.js';
+const baseUrl = process.env.MAMORU_AGENT_TARGET_URL || 'https://mamoru-map-api.krin6525.workers.dev';
+const reportDir = process.env.MAMORU_AGENT_REPORT_DIR || 'artifacts/agent';
+const observation = await observe(baseUrl);
+const issues = analyze(observation);
+const report = { stage: 1, baseUrl, observedAt: new Date().toISOString(), observation, issues, uniqueFingerprints: [...new Set(issues.map((issue) => issue.fingerprint))] };
+await mkdir(reportDir, { recursive: true });
+await writeFile(`${reportDir}/stage-1-report.json`, JSON.stringify(report, null, 2));
+console.log(JSON.stringify({ observerRunId: observation.observerRunId, issueCount: issues.length, report: `${reportDir}/stage-1-report.json` }));
