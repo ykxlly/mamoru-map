@@ -675,6 +675,8 @@
     font-size: .75rem;
     font-weight: 900;
   }
+  .event-select-label { display: grid; min-inline-size: 0; color: var(--muted); font-size: .68rem; font-weight: 800; }
+  #event-select { inline-size: 100%; min-inline-size: 0; min-block-size: 2.75rem; margin-block-start: .25rem; padding-inline: .65rem 2rem; border: 1px solid #b5c3c0; border-radius: .5rem; color: var(--ink); background: var(--surface); font-size: .85rem; }
   .timeline-panel input[type="range"] {
     inline-size: 100%;
     min-block-size: 2rem;
