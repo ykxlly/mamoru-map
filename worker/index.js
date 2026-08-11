@@ -8,6 +8,21 @@ const LIFECYCLE_STATUSES = new Set(['active', 'ongoing', 'resolved', 'expired', 
 const INFORMATION_CLASSES = new Set(['official', 'media', 'reference']);
 const LOCATION_PRECISIONS = new Set(['exact', 'representative', 'estimated', 'unknown']);
 const ROAD_STATUSES = new Set(['recently_passed', 'restricted', 'closed', 'unknown']);
+const PLATEAU_CATALOG_URL = 'https://api.plateauview.mlit.go.jp/datacatalog/plateau-datasets';
+const PLATEAU_MAX_BYTES = 16_000_000;
+const PLATEAU_TIMEOUT_MS = 15_000;
+const PLATEAU_QUEUE_MESSAGE_MAX_BYTES = 120_000;
+const PLATEAU_QUEUE_BATCH_ITEMS = 50;
+const PLATEAU_QUEUE_SEND_BATCH_MAX_BYTES = 240_000;
+const PLATEAU_PUBLIC_ORIGIN = 'https://mamoru-map-api.krin6525.workers.dev';
+const PLATEAU_HAZARD_TYPES = [
+  { hazardType: 'flood', featureType: 'fld', label: '洪水' },
+  { hazardType: 'landslide', featureType: 'lsld', label: '土砂災害' },
+  { hazardType: 'tsunami', featureType: 'tnm', label: '津波' },
+  { hazardType: 'stormSurge', featureType: 'htd', label: '高潮' },
+  { hazardType: 'inlandFlooding', featureType: 'ifld', label: '内水' }
+];
+const PLATEAU_HAZARD_DISCLAIMER = 'このレイヤーは災害の想定区域を示すもので、現在の被害状況を示すものではありません。避難や安全確保については、自治体・気象庁などの最新の公式情報を確認してください。';
 const PREFECTURE_CENTERS = [
   ['北海道', 43.0642, 141.3469], ['青森県', 40.8244, 140.7400], ['岩手県', 39.7036, 141.1527],
   ['宮城県', 38.2688, 140.8721], ['秋田県', 39.7186, 140.1024], ['山形県', 38.2404, 140.3633],
@@ -45,6 +60,10 @@ export default {
       console.log(JSON.stringify({ event: 'scheduled_ingest', ...result }));
       console.log(JSON.stringify({ event: 'scheduled_lifecycle', ...lifecycle }));
     }));
+    ctx.waitUntil(recoverStalePlateauRuns(env.DB, new Date().toISOString()));
+  },
+  async queue(batch, env, ctx) {
+    for (const message of batch.messages) await processPlateauQueueMessage(message, batch.queue, env, ctx);
   }
 };
 
@@ -54,6 +73,8 @@ async function route(request, env, url) {
 
   if (request.method === 'GET' && url.pathname === '/api/health') return json({ ok: true, env: env.APP_ENV || 'unknown', version: env.APP_VERSION || 'unknown' });
   const protectedRoute = (request.method === 'POST' && url.pathname === '/api/sources')
+    || (request.method === 'POST' && url.pathname === '/api/admin/plateau/sync')
+    || (request.method === 'GET' && (url.pathname === '/api/admin/plateau/sync/status' || url.pathname === '/api/admin/plateau/sync/runs'))
     || (request.method === 'POST' && /^\/api\/sources\/\d+\/ingest$/.test(url.pathname))
     || (request.method === 'POST' && url.pathname === '/api/automation/run')
     || (request.method === 'POST' && url.pathname === '/api/automation/approve-existing')
@@ -66,8 +87,16 @@ async function route(request, env, url) {
     || (request.method === 'POST' && /^\/api\/admin\/reports\/\d+\/state$/.test(url.pathname));
   if (protectedRoute) {
     const auth = await authorize(request, env, url.pathname);
-    if (auth) return auth;
+    if (auth) return withNoStore(auth);
   }
+  if (request.method === 'POST' && url.pathname === '/api/admin/plateau/sync') return startPlateauSync(env.DB, env.PLATEAU_SYNC_QUEUE);
+  if (request.method === 'GET' && url.pathname === '/api/admin/plateau/sync/status') return plateauSyncStatus(env.DB);
+  if (request.method === 'GET' && url.pathname === '/api/admin/plateau/sync/runs') return plateauSyncRuns(env.DB, url);
+  if (request.method === 'GET' && url.pathname === '/api/plateau/regions') return listPlateauRegions(env.DB);
+  if (request.method === 'GET' && url.pathname === '/api/plateau/availability') return plateauAvailability(env.DB, url);
+  if (request.method === 'GET' && url.pathname === '/api/plateau/hazards') return plateauHazards(env.DB);
+  if (request.method === 'GET' && url.pathname === '/api/plateau/hazards/availability') return plateauHazardAvailability(env.DB, url);
+  if (request.method === 'GET' && url.pathname === '/api/plateau/hazards/config') return plateauHazardConfig(env.DB, url);
   if (request.method === 'GET' && url.pathname === '/api/sources') return listSources(env.DB);
   if (request.method === 'POST' && url.pathname === '/api/sources') return createSource(request, env.DB, env);
   if (request.method === 'POST' && /^\/api\/sources\/\d+\/ingest$/.test(url.pathname)) return ingest(request, env.DB, Number(url.pathname.split('/')[3]), env);
@@ -1511,8 +1540,317 @@ function constantTimeEqual(a, b) { let result = a.length ^ b.length; const max =
 async function sha256(value) { const bytes = new TextEncoder().encode(value); const hash = await crypto.subtle.digest('SHA-256', bytes); return [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, '0')).join(''); }
 async function markSourceFailure(db, sourceId) { await db.prepare('UPDATE sources SET last_failure_at = ? WHERE id = ?').bind(new Date().toISOString(), sourceId).run(); }
 async function readJson(request) { try { return await request.json(); } catch { return {}; } }
+async function startPlateauSync(db, queue) {
+  const now = new Date().toISOString();
+  await recoverStalePlateauRuns(db, now);
+  const active = await db.prepare("SELECT id FROM plateau_sync_runs WHERE status IN ('queued', 'running') ORDER BY created_at LIMIT 1").first();
+  if (active) return jsonWithHeaders({ accepted: false, reason: 'sync_already_running', runId: active.id }, 409, { 'cache-control': 'no-store' });
+  if (!queue?.send) return jsonWithHeaders({ accepted: false, reason: 'sync_unavailable' }, 503, { 'cache-control': 'no-store' });
+  const runId = crypto.randomUUID();
+  try {
+    await db.prepare(`INSERT INTO plateau_sync_runs (id, status, lock_key, created_at, updated_at) VALUES (?, 'queued', 'plateau', ?, ?)`)
+      .bind(runId, now, now).run();
+  } catch (error) {
+    if (/unique|constraint/i.test(String(error?.message || error))) {
+      const current = await db.prepare("SELECT id FROM plateau_sync_runs WHERE status IN ('queued', 'running') ORDER BY created_at LIMIT 1").first();
+      return jsonWithHeaders({ accepted: false, reason: 'sync_already_running', runId: current?.id || null }, 409, { 'cache-control': 'no-store' });
+    }
+    throw error;
+  }
+  try {
+    await queue.send({ type: 'catalog', runId });
+  } catch {
+    await failPlateauRun(db, runId, 'queue_send_failed');
+    return jsonWithHeaders({ accepted: false, reason: 'sync_unavailable' }, 503, { 'cache-control': 'no-store' });
+  }
+  return jsonWithHeaders({ accepted: true, runId, status: 'queued' }, 202, { 'cache-control': 'no-store' });
+}
+async function processPlateauQueueMessage(message, queueName, env, _ctx) {
+  if (queueName !== 'mamoru-map-plateau-sync' || !message?.body || typeof message.body !== 'object') return message.ack();
+  plateauCheckpoint(message.body.runId, 'message_received', { type: message.body.type, attempts: message.attempts });
+  try {
+    if (message.body.type === 'catalog') await queuePlateauCatalog(env.DB, env.PLATEAU_SYNC_QUEUE, message.body.runId);
+    else if (message.body.type === 'dataset_batch') await applyPlateauDatasetBatch(env.DB, message.id, message.body);
+    else return message.ack();
+    plateauCheckpoint(message.body.runId, 'message_acked', { type: message.body.type });
+    message.ack();
+  } catch (error) {
+    plateauCheckpoint(message.body.runId, 'message_failed', { code: safePlateauError(error), attempts: message.attempts });
+    if (message.attempts >= 3) await failPlateauRun(env.DB, message.body?.runId, `queue_${safePlateauError(error)}`);
+    message.retry({ delaySeconds: 30 });
+  }
+}
+async function queuePlateauCatalog(db, queue, runId) {
+  if (!validPlateauRunId(runId) || !queue?.sendBatch) throw new Error('queue_invalid');
+  plateauCheckpoint(runId, 'lock_acquired');
+  const run = await db.prepare('SELECT * FROM plateau_sync_runs WHERE id = ?').bind(runId).first();
+  if (!run || !['queued', 'running'].includes(run.status)) return;
+  const now = new Date().toISOString();
+  await db.prepare(`UPDATE plateau_sync_runs SET status = 'running', started_at = COALESCE(started_at, ?), lock_expires_at = ?, updated_at = ?
+    WHERE id = ? AND status IN ('queued', 'running')`).bind(now, plateauLockExpiry(), now, runId).run();
+  plateauCheckpoint(runId, 'catalog_fetch_started');
+  const fetchedAt = new Date().toISOString();
+  let response;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), PLATEAU_TIMEOUT_MS);
+    try { response = await fetch(PLATEAU_CATALOG_URL, { method: 'GET', redirect: 'manual', headers: { accept: 'application/json' }, signal: controller.signal }); }
+    finally { clearTimeout(timer); }
+  } catch (error) { throw error; }
+  if (!response.ok) throw new Error(`http_${response.status}`);
+  plateauCheckpoint(runId, 'catalog_fetch_completed', { status: response.status });
+  let payload;
+  try { payload = JSON.parse(await readResponseTextLimited(response, PLATEAU_MAX_BYTES, 'application/json')); }
+  catch (error) { throw new Error(error?.message === 'article_too_large' ? 'response_too_large' : 'invalid_json'); }
+  plateauCheckpoint(runId, 'catalog_parse_completed');
+  const fetched = plateauPayloadLength(payload);
+  const datasets = dedupePlateauDatasets(normalizePlateauPayload(payload, fetchedAt));
+  plateauCheckpoint(runId, 'normalize_completed', { fetched, normalized: datasets.length });
+  if (!datasets.length) throw new Error('schema_invalid');
+  const messages = createPlateauQueueMessages(runId, datasets);
+  if (!messages.length) throw new Error('queue_message_invalid');
+  await db.prepare(`UPDATE plateau_sync_runs SET payload_total = ?, fetched = ?, skipped = ?, total_batches = ?, completed_batches = 0,
+    lock_expires_at = ?, updated_at = ? WHERE id = ? AND status = 'running'`)
+    .bind(datasets.length, fetched, Math.max(fetched - datasets.length, 0), messages.length, plateauLockExpiry(), new Date().toISOString(), runId).run();
+  plateauCheckpoint(runId, 'batch_enqueue_started', { total_batches: messages.length });
+  await sendPlateauQueueMessages(queue, messages, runId);
+  plateauCheckpoint(runId, 'batch_enqueue_completed', { total_batches: messages.length });
+}
+function createPlateauQueueMessages(runId, datasets) {
+  if (!validPlateauRunId(runId)) return [];
+  const messages = [];
+  let items = [];
+  for (const item of datasets) {
+    if (!validPlateauQueueItem(item)) continue;
+    const candidate = [...items, item];
+    const body = { type: 'dataset_batch', runId, batchNumber: messages.length, items: candidate };
+    if (items.length && (candidate.length > PLATEAU_QUEUE_BATCH_ITEMS || plateauMessageBytes(body) > PLATEAU_QUEUE_MESSAGE_MAX_BYTES)) {
+      messages.push({ body: { type: 'dataset_batch', runId, batchNumber: messages.length, items } });
+      items = [item];
+    } else items = candidate;
+    if (plateauMessageBytes({ type: 'dataset_batch', runId, batchNumber: messages.length, items }) > PLATEAU_QUEUE_MESSAGE_MAX_BYTES) return [];
+  }
+  if (items.length) messages.push({ body: { type: 'dataset_batch', runId, batchNumber: messages.length, items } });
+  return messages;
+}
+async function sendPlateauQueueMessages(queue, messages, runId) {
+  let group = [];
+  let size = 0;
+  for (const message of messages) {
+    const bytes = plateauMessageBytes(message.body);
+    if (bytes > PLATEAU_QUEUE_MESSAGE_MAX_BYTES) throw new Error('queue_message_too_large');
+    if (group.length && (group.length >= 100 || size + bytes > PLATEAU_QUEUE_SEND_BATCH_MAX_BYTES)) {
+      await queue.sendBatch(group);
+      plateauCheckpoint(runId, 'batch_enqueue_progress', { sent: group.length });
+      group = []; size = 0;
+    }
+    group.push(message); size += bytes;
+  }
+  if (group.length) {
+    await queue.sendBatch(group);
+    plateauCheckpoint(runId, 'batch_enqueue_progress', { sent: group.length });
+  }
+}
+async function applyPlateauDatasetBatch(db, messageId, body) {
+  if (!validPlateauRunId(body?.runId) || !Number.isInteger(body?.batchNumber) || body.batchNumber < 0 || !Array.isArray(body.items) || !body.items.length || body.items.length > PLATEAU_QUEUE_BATCH_ITEMS || !body.items.every(validPlateauQueueItem)) throw new Error('queue_message_invalid');
+  const run = await db.prepare("SELECT * FROM plateau_sync_runs WHERE id = ? AND status = 'running'").bind(body.runId).first();
+  if (!run) return;
+  plateauCheckpoint(body.runId, 'batch_received', { batch: body.batchNumber });
+  const existingBatch = await db.prepare('SELECT status FROM plateau_sync_batches WHERE run_id = ? AND batch_number = ?').bind(body.runId, body.batchNumber).first();
+  if (existingBatch?.status === 'succeeded') return;
+  const ids = body.items.map((item) => item.values[0]);
+  const { results: existing } = await db.prepare(`SELECT external_dataset_id FROM plateau_datasets WHERE external_dataset_id IN (${ids.map(() => '?').join(',')})`).bind(...ids).all();
+  const existingIds = new Set(existing.map((row) => row.external_dataset_id));
+  const now = new Date().toISOString();
+  const statements = body.items.map((item) => plateauUpsertStatement(db, item.values));
+  statements.push(db.prepare(`INSERT INTO plateau_sync_batches (message_id, run_id, batch_number, item_count, status, processed_at)
+    VALUES (?, ?, ?, ?, 'succeeded', ?) ON CONFLICT(run_id, batch_number) DO NOTHING`).bind(messageId, body.runId, body.batchNumber, body.items.length, now));
+  await db.batch(statements);
+  plateauCheckpoint(body.runId, 'd1_upsert_completed', { batch: body.batchNumber });
+  const inserted = body.items.filter((item) => !existingIds.has(item.values[0])).length;
+  await finalizePlateauBatch(db, body.runId, inserted, body.items.length - inserted);
+}
+function plateauUpsertStatement(db, values) {
+  return db.prepare(`INSERT INTO plateau_datasets
+    (external_dataset_id, municipality_code, prefecture_code, prefecture_name, city_name, dataset_year,
+     specification_version, feature_types_json, source_url, distribution_url, license_name, attribution_text,
+     is_latest, is_available, fetched_at, last_checked_at, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(external_dataset_id) DO UPDATE SET municipality_code=excluded.municipality_code,
+     prefecture_code=excluded.prefecture_code, prefecture_name=excluded.prefecture_name, city_name=excluded.city_name,
+     dataset_year=excluded.dataset_year, specification_version=excluded.specification_version,
+     feature_types_json=excluded.feature_types_json, source_url=excluded.source_url, distribution_url=excluded.distribution_url,
+     license_name=excluded.license_name, attribution_text=excluded.attribution_text, is_latest=excluded.is_latest,
+     is_available=excluded.is_available, fetched_at=excluded.fetched_at, last_checked_at=excluded.last_checked_at,
+     updated_at=excluded.updated_at`).bind(...values);
+}
+async function finalizePlateauBatch(db, runId, inserted, updated) {
+  const completed = await db.prepare("SELECT COUNT(*) AS count FROM plateau_sync_batches WHERE run_id = ? AND status = 'succeeded'").bind(runId).first();
+  const run = await db.prepare("SELECT * FROM plateau_sync_runs WHERE id = ? AND status = 'running'").bind(runId).first();
+  if (!run) return;
+  const completedBatches = Number(completed?.count || 0);
+  const isComplete = Number(run.total_batches || 0) > 0 && completedBatches >= Number(run.total_batches);
+  const now = new Date().toISOString();
+  await db.prepare(`UPDATE plateau_sync_runs SET completed_batches = ?, inserted = inserted + ?, updated = updated + ?,
+    status = CASE WHEN ? THEN 'succeeded' ELSE 'running' END,
+    finished_at = CASE WHEN ? THEN ? ELSE finished_at END,
+    lock_expires_at = CASE WHEN ? THEN NULL ELSE ? END, updated_at = ? WHERE id = ? AND status = 'running'`)
+    .bind(completedBatches, inserted, updated, isComplete ? 1 : 0, isComplete ? 1 : 0, now, isComplete ? 1 : 0, plateauLockExpiry(), now, runId).run();
+  if (isComplete) await invalidatePlateauPublicCache();
+}
+async function invalidatePlateauPublicCache() {
+  if (!globalThis.caches?.default) return;
+  await caches.default.delete(new Request(`${PLATEAU_PUBLIC_ORIGIN}/api/plateau/regions`));
+}
+function dedupePlateauDatasets(datasets) {
+  const unique = new Map();
+  for (const item of datasets) unique.set(item.values[0], item);
+  return [...unique.values()];
+}
+function plateauMessageBytes(body) { return new TextEncoder().encode(JSON.stringify(body)).byteLength; }
+function validPlateauRunId(value) { return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(value); }
+function validPlateauQueueItem(item) { return Array.isArray(item?.values) && item.values.length === 18 && typeof item.values[0] === 'string' && item.values[0].length > 0 && item.values[0].length <= 300; }
+function plateauLockExpiry() { return new Date(Date.now() + 30 * 60_000).toISOString(); }
+function plateauCheckpoint(runId, checkpoint, extra = {}) {
+  if (validPlateauRunId(runId)) console.log(JSON.stringify({ event: 'plateau_sync_checkpoint', runId, checkpoint, ...extra }));
+}
+async function failPlateauRun(db, runId, errorCode, fetched = 0, inserted = 0, updated = 0, skipped = 0) {
+  const now = new Date().toISOString();
+  await db.prepare(`UPDATE plateau_sync_runs SET status = 'failed', finished_at = ?, lock_expires_at = NULL, fetched = ?, inserted = ?, updated = ?, skipped = ?, error_count = 1, error_code = ?, updated_at = ? WHERE id = ?`)
+    .bind(now, fetched, inserted, updated, skipped, errorCode, now, runId).run();
+  return { runId, status: 'failed', error: errorCode };
+}
+async function recoverStalePlateauRuns(db, now) {
+  await db.prepare(`UPDATE plateau_sync_runs SET status = 'failed', finished_at = ?, lock_expires_at = NULL, error_count = error_count + 1, error_code = 'stale_lock_recovered', updated_at = ?
+    WHERE status IN ('queued', 'running') AND datetime(COALESCE(lock_expires_at, datetime(created_at, '+30 minutes'))) <= datetime(?)`)
+    .bind(now, now, now).run();
+}
+function plateauPayloadLength(payload) {
+  if (Array.isArray(payload)) return payload.length;
+  return ['datasets', 'latest_datasets', 'composite_tilesets', 'citygml', 'latest_citygml'].reduce((sum, key) => sum + (Array.isArray(payload?.[key]) ? payload[key].length : 0), 0);
+}
+function safePlateauError(error) {
+  if (error?.name === 'AbortError') return 'timeout';
+  if (/^(http_\d{3}|invalid_json|response_too_large|schema_invalid|queue_message_(invalid|too_large)|queue_invalid)$/.test(String(error?.message || ''))) return String(error.message);
+  if (/unique|constraint/i.test(String(error?.message || error))) return 'd1_constraint';
+  return 'd1_or_runtime_error';
+}
+async function plateauSyncStatus(db) {
+  await recoverStalePlateauRuns(db, new Date().toISOString());
+  const run = await db.prepare('SELECT * FROM plateau_sync_runs ORDER BY created_at DESC LIMIT 1').first();
+  return jsonWithHeaders({ run: run || null }, 200, { 'cache-control': 'no-store' });
+}
+async function plateauSyncRuns(db, url) {
+  const requested = Number(url.searchParams.get('limit') || 20);
+  if (!Number.isInteger(requested) || requested < 1 || requested > 50) return jsonWithHeaders({ error: 'validation_error' }, 400, { 'cache-control': 'no-store' });
+  const { results } = await db.prepare('SELECT * FROM plateau_sync_runs ORDER BY created_at DESC LIMIT ?').bind(requested).all();
+  return jsonWithHeaders({ runs: results }, 200, { 'cache-control': 'no-store' });
+}
+function normalizePlateauPayload(payload, now) {
+  const rows = Array.isArray(payload) ? payload : [...(payload?.datasets || []), ...(payload?.latest_datasets || []), ...(payload?.citygml || []), ...(payload?.latest_citygml || [])];
+  return rows.map((row) => {
+    const municipality = String(row.city_code || row.municipality_code || row.cityCode || '').trim();
+    const external = String(row.id || row.dataset_id || row.external_dataset_id || `${municipality}:${row.type || row.type_en || ''}:${row.year || ''}:${row.url || row.composite_url || ''}`).trim();
+    if (!/^\d{5}$/.test(municipality) || !external || external.length > 300) return null;
+    const year = row.year === 'latest' ? 'latest' : String(row.year || row.registration_year || '').match(/^\d{4}$/)?.[0] || null;
+    const features = Array.isArray(row.layers) ? row.layers : Array.isArray(row.feature_types) ? row.feature_types : [];
+    const source = plateauUrl(row.url);
+    const distribution = plateauUrl(row.composite_url || row.distribution_url || row.url);
+    const values = [external, municipality, String(row.pref_code || row.prefecture_code || municipality.slice(0, 2)), clean(row.pref || row.prefecture_name, 80) || null,
+      clean(row.city || row.city_name, 120) || null, year, clean(row.spec || row.specification_version || row.format_version, 80) || null,
+      JSON.stringify(features.slice(0, 100).map((v) => clean(typeof v === 'string' ? v : v?.id || v?.name, 100)).filter(Boolean)), source, distribution,
+      clean(row.license_name || row.license, 160) || null, clean(row.attribution_text || row.attribution, 300) || null,
+      year === 'latest' ? 1 : 0, 1, now, now, now, now];
+    return { values };
+  }).filter(Boolean);
+}
+function plateauUrl(value) {
+  try { const u = new URL(value); return u.protocol === 'https:' && u.toString().length <= 2_000 ? u.toString() : null; } catch { return null; }
+}
+async function listPlateauRegions(db) {
+  const { results } = await db.prepare(`SELECT municipality_code, prefecture_code, prefecture_name, city_name,
+    MAX(is_available) AS is_available, MAX(last_checked_at) AS last_checked_at
+    FROM plateau_datasets GROUP BY municipality_code, prefecture_code, prefecture_name, city_name ORDER BY municipality_code`).all();
+  return jsonWithHeaders({ regions: results }, 200, { 'cache-control': 'public, max-age=300' });
+}
+async function plateauAvailability(db, url) {
+  if (url.searchParams.has('lat') || url.searchParams.has('lng')) return jsonWithHeaders({ supported: false, reason: 'municipality_code_only' }, 400, { 'cache-control': 'public, max-age=300' });
+  const code = url.searchParams.get('municipality_code') || '';
+  if (!/^\d{5}$/.test(code)) return json({ error: 'validation_error' }, 400);
+  const { results } = await db.prepare(`SELECT external_dataset_id, municipality_code, prefecture_code, prefecture_name, city_name,
+    dataset_year, specification_version, feature_types_json, source_url, distribution_url, license_name, attribution_text,
+    is_latest, is_available, last_checked_at FROM plateau_datasets WHERE municipality_code = ? AND is_available = 1 ORDER BY is_latest DESC, dataset_year DESC`).bind(code).all();
+  return jsonWithHeaders({ municipality_code: code, supported: results.length > 0, datasets: results }, 200, { 'cache-control': 'public, max-age=300' });
+}
+
+async function plateauHazards(db) {
+  const { results } = await db.prepare("SELECT external_dataset_id, feature_types_json, distribution_url FROM plateau_datasets WHERE is_available = 1 AND distribution_url LIKE '%/mvt/%/tilejson.json'").all();
+  const counts = Object.fromEntries(PLATEAU_HAZARD_TYPES.map((hazard) => [hazard.hazardType, 0]));
+  for (const row of results) {
+    const hazard = PLATEAU_HAZARD_TYPES.find((item) => plateauHazardTilejson(row.distribution_url, item.featureType));
+    if (hazard && new RegExp(`_${hazard.featureType}(?:_lod\\d+)?$`).test(String(row.external_dataset_id || ''))) counts[hazard.hazardType] += 1;
+  }
+  return jsonWithHeaders({ hazards: PLATEAU_HAZARD_TYPES.map((hazard) => ({ ...hazard, availableMunicipalities: counts[hazard.hazardType] })) }, 200, { 'cache-control': 'public, max-age=300' });
+}
+
+async function plateauHazardAvailability(db, url) {
+  const result = await plateauHazardConfigPayload(db, url);
+  return result instanceof Response ? result : jsonWithHeaders({ municipalityCode: result.municipalityCode, hazards: result.hazards }, 200, { 'cache-control': 'public, max-age=300' });
+}
+
+async function plateauHazardConfig(db, url) {
+  const result = await plateauHazardConfigPayload(db, url);
+  return result instanceof Response ? result : jsonWithHeaders(result, 200, { 'cache-control': 'public, max-age=300' });
+}
+
+async function plateauHazardConfigPayload(db, url) {
+  const municipalityCode = String(url.searchParams.get('municipality_code') || '').trim();
+  if (!/^\d{5}$/.test(municipalityCode)) return jsonWithHeaders({ error: 'invalid_municipality_code' }, 400, { 'cache-control': 'public, max-age=300' });
+  const { results } = await db.prepare(`SELECT external_dataset_id, municipality_code, city_name, dataset_year, specification_version,
+    feature_types_json, distribution_url, license_name, attribution_text, last_checked_at
+    FROM plateau_datasets WHERE municipality_code = ? AND is_available = 1 ORDER BY is_latest DESC, dataset_year DESC`).bind(municipalityCode).all();
+  const hazards = PLATEAU_HAZARD_TYPES.map((hazard) => plateauHazardConfiguration(results, municipalityCode, hazard));
+  return { municipalityCode, hazards };
+}
+
+function plateauHazardConfiguration(rows, municipalityCode, hazard) {
+  const row = rows.find((item) => new RegExp(`^${municipalityCode}_${hazard.featureType}(?:_lod\\d+)?$`).test(String(item.external_dataset_id || ''))
+    && plateauHazardTilejson(item.distribution_url, hazard.featureType));
+  const base = {
+    hazardType: hazard.hazardType,
+    label: hazard.label,
+    municipalityCode,
+    available: Boolean(row),
+    datasetYear: row?.dataset_year || null,
+    specificationVersion: row?.specification_version || null,
+    sourceName: '国土交通省 PLATEAU',
+    attribution: '国土交通省 PLATEAU',
+    format: row ? 'MVT (TileJSON)' : null,
+    tilesUrl: row ? row.distribution_url : null,
+    dataUrl: null,
+    layerName: row ? hazard.featureType : null,
+    // Zoom limits are defined by the allowlisted TileJSON and MapLibre reads them from that document.
+    // They are not copied from a different municipality's TileJSON.
+    minZoom: null,
+    maxZoom: null,
+    lastCheckedAt: row?.last_checked_at || null,
+    disclaimer: PLATEAU_HAZARD_DISCLAIMER
+  };
+  return row ? base : { ...base, reason: 'MapLibreで直接表示できるMVTまたはGeoJSONの配信データがありません。' };
+}
+
+function plateauHazardTilejson(value, featureType) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && url.hostname === 'api.plateauview.mlit.go.jp'
+      && new RegExp(`^/datacatalog/mvt/\\d{5}-${featureType}(?:-lod\\d+)?-(?:latest|\\d{4})/tilejson\\.json$`).test(url.pathname)
+      && !url.search && !url.hash;
+  } catch { return false; }
+}
 function json(value, status = 200) { return new Response(JSON.stringify(value), { status, headers: JSON_HEADERS }); }
+function jsonWithHeaders(value, status, extra = {}) { return new Response(JSON.stringify(value), { status, headers: { ...JSON_HEADERS, ...extra } }); }
+function withNoStore(response) { const headers = new Headers(response.headers); headers.set('cache-control', 'no-store'); return new Response(response.body, { status: response.status, headers }); }
 function corsHeaders() { return { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET,POST,OPTIONS', 'access-control-allow-headers': 'content-type, authorization' }; }
 function withCors(response) { const headers = new Headers(response.headers); Object.entries(corsHeaders()).forEach(([key, value]) => headers.set(key, value)); return new Response(response.body, { status: response.status, headers }); }
 
-export { parseFeed, parseGeoJsonFeed, parseHtmlMedia, parseSourcePayload, parseToyotaVics, normalizeOpenMeteo, extractItem, extractArticleDocument, articleTitleMatches, articleUrlAllowed, reportsToGeoJson, reportsToCsv, reportPriority, sanitizeArchiveReport, allowedHost, sameHost, shouldAutoPublish, validDiscoverySourceUrl, deriveInformationClass, deriveLocationPrecision, defaultValidUntil, normalizeLifecycleStatus, runIngestionLoop, enrichPendingArticles, backfillCoarseLocations, refreshLifecycleStatuses };
+export { parseFeed, parseGeoJsonFeed, parseHtmlMedia, parseSourcePayload, parseToyotaVics, normalizeOpenMeteo, normalizePlateauPayload, createPlateauQueueMessages, extractItem, extractArticleDocument, articleTitleMatches, articleUrlAllowed, reportsToGeoJson, reportsToCsv, reportPriority, sanitizeArchiveReport, allowedHost, sameHost, shouldAutoPublish, validDiscoverySourceUrl, deriveInformationClass, deriveLocationPrecision, defaultValidUntil, normalizeLifecycleStatus, runIngestionLoop, enrichPendingArticles, backfillCoarseLocations, refreshLifecycleStatuses };

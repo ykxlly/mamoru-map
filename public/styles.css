@@ -221,6 +221,29 @@
     grid-column: 1 / -1;
     color: #755a14;
   }
+  .plateau-panel { padding: .75rem .9rem .9rem; border-block-start: 1px solid var(--line); }
+  .plateau-panel h3 { font-size: .8rem; }
+  .plateau-status { margin-block: .35rem; font-size: .78rem; font-weight: 800; }
+  .plateau-status[data-state="supported"] { color: var(--teal); }
+  .plateau-status[data-state="unsupported"], .plateau-status[data-state="unknown"] { color: var(--muted); }
+  .plateau-status[data-state="error"] { color: var(--emergency); }
+  .plateau-status[data-state="loading"] { color: var(--medium); }
+  .plateau-dataset-list { display: grid; gap: .55rem; padding: 0; margin: .5rem 0; list-style: none; font-size: .7rem; }
+  .plateau-dataset-list li { display: grid; gap: .1rem; padding: .5rem; border: 1px solid var(--line); border-radius: .45rem; background: var(--surface-soft); }
+  .plateau-note, .plateau-source { color: var(--muted); font-size: .65rem; }
+  .plateau-source { margin-block-start: .45rem; }
+  .hazard-panel { margin-block-start: .7rem; padding-block-start: .65rem; border-block-start: 1px solid var(--line); }
+  .hazard-panel h4 { margin: 0; font-size: .78rem; }
+  .hazard-status, .hazard-disclaimer { margin: .35rem 0; color: var(--muted); font-size: .67rem; line-height: 1.5; }
+  .hazard-controls { display: grid; gap: .42rem; max-block-size: 13rem; overflow: auto; padding-inline-end: .2rem; }
+  .hazard-control { display: grid; grid-template-columns: auto 1fr; gap: .1rem .45rem; align-items: start; padding: .45rem; border: 1px solid var(--line); border-radius: .4rem; background: var(--surface-soft); }
+  .hazard-control input { grid-row: span 2; margin-block-start: .15rem; }
+  .hazard-control strong { font-size: .72rem; }
+  .hazard-control small { grid-column: 2; color: var(--muted); font-size: .63rem; line-height: 1.45; }
+  .hazard-control[data-available="false"] { opacity: .72; }
+  .hazard-legend { display: grid; gap: .25rem; margin-block: .5rem; font-size: .66rem; }
+  .hazard-legend-item { display: flex; gap: .35rem; align-items: center; }
+  .hazard-swatch { inline-size: 1rem; block-size: .75rem; border: 2px solid currentColor; border-radius: .12rem; background: repeating-linear-gradient(135deg, currentColor 0 2px, transparent 2px 5px); opacity: .8; }
 
   .legend-dot {
     inline-size: .58rem;
@@ -937,6 +960,9 @@
   .layer-panel {
     inset-block-start: .65rem;
     inset-inline-start: .65rem;
+    max-block-size: calc(100% - 1.3rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
   .map-note {
     inset-inline-start: .65rem;

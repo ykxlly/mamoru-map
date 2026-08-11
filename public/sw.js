@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mamoru-map-shell-v2';
+const CACHE_NAME = 'mamoru-map-shell-v3';
 const SHELL_ASSETS = ['/', '/index.html', '/styles.css', '/app.js', '/manifest.json'];
 
 self.addEventListener('install', (event) => {

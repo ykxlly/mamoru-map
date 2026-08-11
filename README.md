@@ -1,5 +1,9 @@
 # まもるマップ
 
+## Project PLATEAU Phase 1
+
+`migration-010-plateau-datasets.sql` から `migration-013-plateau-sync-queue-batches.sql` をD1へ順に適用後、管理Bearerトークンで `POST /api/admin/plateau/sync` を実行するとCloudflare Queues経由でPLATEAU配信サービスのデータカタログを同期します。開始後は `GET /api/admin/plateau/sync/status` と `GET /api/admin/plateau/sync/runs?limit=20` で確認できます。参照APIは `GET /api/plateau/regions` と `GET /api/plateau/availability?municipality_code=13101` です。緯度経度による推定は未対応です。
+
 災害時の公式発表・報道情報を、出典付きで地図に整理するMVPです。一般利用者からの自由投稿は受け付けず、登録済みソースの取得と管理者レビューを経た情報だけを公開します。
 
 ## 今回の実装範囲

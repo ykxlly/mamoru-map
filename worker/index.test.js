@@ -1,6 +1,38 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseFeed, parseGeoJsonFeed, parseHtmlMedia, parseSourcePayload, parseToyotaVics, normalizeOpenMeteo, extractItem, extractArticleDocument, articleTitleMatches, articleUrlAllowed, reportsToGeoJson, reportsToCsv, reportPriority, sanitizeArchiveReport, allowedHost, sameHost, shouldAutoPublish, validDiscoverySourceUrl, deriveInformationClass, deriveLocationPrecision, defaultValidUntil, normalizeLifecycleStatus } from './index.js';
+import handler, { parseFeed, parseGeoJsonFeed, parseHtmlMedia, parseSourcePayload, parseToyotaVics, normalizeOpenMeteo, normalizePlateauPayload, createPlateauQueueMessages, extractItem, extractArticleDocument, articleTitleMatches, articleUrlAllowed, reportsToGeoJson, reportsToCsv, reportPriority, sanitizeArchiveReport, allowedHost, sameHost, shouldAutoPublish, validDiscoverySourceUrl, deriveInformationClass, deriveLocationPrecision, defaultValidUntil, normalizeLifecycleStatus } from './index.js';
+
+function plateauDb() {
+  const rows = new Map();
+  const runs = [];
+  return { rows, runs, prepare(sql) {
+    return { bind(...args) {
+      return {
+        async first() {
+          if (sql.includes('plateau_sync_runs') && sql.includes('status IN')) return runs.find((r) => ['queued', 'running'].includes(r.status)) || null;
+          if (sql.includes("SELECT id FROM plateau_sync_runs WHERE status = 'queued'")) return runs.find((r) => r.status === 'queued') || null;
+          if (sql.includes('SELECT * FROM plateau_sync_runs')) return runs.at(-1) || null;
+          return { count: 0 };
+        },
+        async all() {
+          if (sql.includes('GROUP BY municipality_code')) return { results: [...rows.values()].map((r) => ({ municipality_code: r[1], prefecture_code: r[2], prefecture_name: r[3], city_name: r[4], is_available: r[13], last_checked_at: r[15] })) };
+          if (sql.includes('WHERE municipality_code')) return { results: [...rows.values()].filter((r) => r[1] === args[0]).map((r) => ({ external_dataset_id: r[0], municipality_code: r[1], prefecture_code: r[2], prefecture_name: r[3], city_name: r[4], dataset_year: r[5], specification_version: r[6], feature_types_json: r[7], source_url: r[8], distribution_url: r[9], license_name: r[10], attribution_text: r[11], is_latest: r[12], is_available: r[13], last_checked_at: r[15] })) };
+          if (sql.includes('SELECT * FROM plateau_sync_runs')) return { results: [...runs].reverse().slice(0, args[0] || 20) };
+          return { results: [] };
+        },
+        async run() {
+          if (sql.includes('INSERT INTO plateau_datasets')) rows.set(args[0], args);
+          else if (sql.includes('INSERT INTO plateau_sync_runs')) runs.push({ id: args[0], status: 'queued', created_at: args[1], updated_at: args[2], fetched: 0, inserted: 0, updated: 0, skipped: 0, error_count: 0 });
+          else if (sql.includes("SET status = 'running'")) { const run = runs.find((r) => r.id === args[3] && r.status === 'queued'); if (run) run.status = 'running'; return { meta: { changes: run ? 1 : 0 } }; }
+          else if (sql.includes("SET status = 'failed'")) { const run = runs.find((r) => r.id === args.at(-1)); if (run) run.status = 'failed'; }
+          return { meta: { changes: 1, last_row_id: 1 } };
+        }
+      };
+    }, async all() { return { results: [] }; }, async first() { if (sql.includes('plateau_sync_runs') && sql.includes('status IN')) return runs.find((r) => ['queued', 'running'].includes(r.status)) || null; if (sql.includes("SELECT id FROM plateau_sync_runs WHERE status = 'queued'")) return runs.find((r) => r.status === 'queued') || null; if (sql.includes('SELECT * FROM plateau_sync_runs')) return runs.at(-1) || null; return { count: 0 }; }, async run() { return { meta: { changes: 1 } }; } };
+  } };
+}
+
+function plateauRequest(path, token = 'secret') { return new Request(`https://mamoru.test${path}`, { method: path === '/api/admin/plateau/sync' ? 'POST' : 'GET', headers: token === null ? {} : { authorization: `Bearer ${token}` } }); }
 
 test('parseFeed extracts RSS items and strips CDATA/html', () => {
   const xml = `<rss><channel><item><guid>abc</guid><title><![CDATA[熊本市の避難所開設]]></title><description><![CDATA[<p>避難所を開設しました。</p>]]></description><link>https://example.com/a</link><pubDate>Mon, 03 Aug 2026 00:00:00 GMT</pubDate></item></channel></rss>`;
@@ -215,4 +247,87 @@ test('archive reports label review news as reference-only and do not expose inte
   assert.equal('review_note' in report, false);
   assert.equal('article_excerpt' in report, false);
   assert.equal('record_status' in report, false);
+});
+
+test('PLATEAU normalizer accepts official catalog fields and rejects incomplete rows', () => {
+  const [item] = normalizePlateauPayload([{ id: '13101-bldg-2025', city_code: '13101', pref_code: '13', pref: '東京都', city: '千代田区', year: '2025', spec: 'bldg-lod2', layers: ['bldg'], url: 'https://example.test/data.zip', composite_url: 'https://api.plateauview.mlit.go.jp/datacatalog/3dtiles/13101-bldg-lod2-latest/tileset.json' }], '2026-08-10T00:00:00.000Z');
+  assert.equal(item.values[0], '13101-bldg-2025');
+  assert.equal(item.values[1], '13101');
+  assert.equal(item.values[12], 0);
+  assert.equal(normalizePlateauPayload([{ id: 'bad', city_code: 'abc' }], new Date().toISOString()).length, 0);
+  assert.equal(normalizePlateauPayload({ latest_citygml: [{ id: 'latest-city', city_code: '13101', year: 'latest' }] }, new Date().toISOString()).length, 1);
+});
+
+test('PLATEAU sync queues quickly, requires Bearer auth, and rejects duplicates', async () => {
+  const db = plateauDb();
+  const queued = [];
+  const env = { DB: db, ADMIN_TOKEN: 'secret', PLATEAU_SYNC_QUEUE: { async send(message) { queued.push(message); } } };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error('must not fetch from start API'); };
+  try {
+    const denied = await handler.fetch(plateauRequest('/api/admin/plateau/sync', null), env);
+    assert.equal(denied.status, 401);
+    assert.equal(denied.headers.get('cache-control'), 'no-store');
+    const first = await handler.fetch(plateauRequest('/api/admin/plateau/sync'), env);
+    assert.equal(first.status, 202);
+    assert.equal((await first.json()).status, 'queued');
+    assert.equal(queued.length, 1);
+    assert.equal(queued[0].type, 'catalog');
+    const second = await handler.fetch(plateauRequest('/api/admin/plateau/sync'), env);
+    assert.equal(second.status, 409);
+    const status = await handler.fetch(plateauRequest('/api/admin/plateau/sync/status'), env);
+    assert.equal(status.status, 200);
+    assert.equal((await status.json()).run.status, 'queued');
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('PLATEAU queue messages stay within item and byte limits', () => {
+  const runId = '11111111-1111-4111-8111-111111111111';
+  const values = (id) => [id, '13101', '13', null, null, '2025', null, '[]', 'https://example.test/a', 'https://example.test/a', null, null, 0, 1, 'now', 'now', 'now', 'now'];
+  const messages = createPlateauQueueMessages(runId, Array.from({ length: 101 }, (_, index) => ({ values: values(`dataset-${index}`) })));
+  assert.equal(messages.length, 3);
+  for (const message of messages) {
+    assert.ok(message.body.items.length <= 50);
+    assert.ok(new TextEncoder().encode(JSON.stringify(message.body)).byteLength < 120000);
+  }
+});
+
+test('PLATEAU sync status runs validates limit and does not expose secrets', async () => {
+  const env = { DB: plateauDb(), ADMIN_TOKEN: 'secret' };
+  const invalid = await handler.fetch(plateauRequest('/api/admin/plateau/sync/runs?limit=0'), env);
+  assert.equal(invalid.status, 400);
+  assert.equal(invalid.headers.get('cache-control'), 'no-store');
+  assert.equal((await handler.fetch(plateauRequest('/api/admin/plateau/sync/runs?limit=1'), env)).status, 200);
+});
+
+test('PLATEAU APIs validate availability inputs and set cache headers', async () => {
+  const db = plateauDb();
+  db.rows.set('d1', ['d1', '13101', '13', '東京都', '千代田区', 'latest', null, '[]', null, null, null, null, 1, 1, 'fetched', 'checked', 'created', 'updated']);
+  const env = { DB: db, ADMIN_TOKEN: 'secret' };
+  const regions = await handler.fetch(plateauRequest('/api/plateau/regions', null), env);
+  assert.equal(regions.status, 200);
+  assert.equal(regions.headers.get('cache-control'), 'public, max-age=300');
+  assert.equal((await handler.fetch(plateauRequest('/api/plateau/availability?municipality_code=13101', null), env)).status, 200);
+  assert.equal((await handler.fetch(plateauRequest('/api/plateau/availability?municipality_code=bad', null), env)).status, 400);
+  const coordinates = await handler.fetch(plateauRequest('/api/plateau/availability?lat=35&lng=139', null), env);
+  assert.equal(coordinates.status, 400);
+  assert.equal(coordinates.headers.get('cache-control'), 'public, max-age=300');
+});
+
+test('PLATEAU hazard config exposes only allowlisted direct MVT hazards', async () => {
+  const db = plateauDb();
+  db.rows.set('13101_lsld', ['13101_lsld', '13101', '13', '東京都', '千代田区', 'latest', null, '["lsld"]', 'https://api.plateauview.mlit.go.jp/datacatalog/mvt/13101-lsld-latest/tilejson.json', 'https://api.plateauview.mlit.go.jp/datacatalog/mvt/13101-lsld-latest/tilejson.json', null, null, 1, 1, 'fetched', 'checked', 'created', 'updated']);
+  db.rows.set('13101_bad', ['13101_bad', '13101', '13', '東京都', '千代田区', 'latest', null, '["fld"]', 'http://not-allowed.example/flood.json', 'http://not-allowed.example/flood.json', null, null, 1, 1, 'fetched', 'checked', 'created', 'updated']);
+  const response = await handler.fetch(plateauRequest('/api/plateau/hazards/config?municipality_code=13101', null), { DB: db });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  const landslide = body.hazards.find((item) => item.hazardType === 'landslide');
+  const flood = body.hazards.find((item) => item.hazardType === 'flood');
+  assert.equal(landslide.available, true);
+  assert.equal(landslide.format, 'MVT (TileJSON)');
+  assert.equal(landslide.layerName, 'lsld');
+  assert.equal(landslide.tilesUrl, 'https://api.plateauview.mlit.go.jp/datacatalog/mvt/13101-lsld-latest/tilejson.json');
+  assert.equal(flood.available, false);
+  assert.equal(flood.tilesUrl, null);
+  assert.equal((await handler.fetch(plateauRequest('/api/plateau/hazards/config?municipality_code=bad', null), { DB: db })).status, 400);
 });

@@ -74,6 +74,20 @@
           <label><input name="basemap" type="radio" value="pale" checked> 淡色地図</label>
           <label><input name="basemap" type="radio" value="standard"> 標準地図</label>
         </fieldset>
+        <section class="plateau-panel" aria-labelledby="plateau-title" aria-live="polite">
+          <h3 id="plateau-title">PLATEAU対応状況</h3>
+          <p id="plateau-status" class="plateau-status" data-state="unknown">地域を選択してください</p>
+          <div id="plateau-details" class="plateau-details" hidden></div>
+          <section id="hazard-panel" class="hazard-panel" aria-labelledby="hazard-title" hidden>
+            <h4 id="hazard-title">想定リスク</h4>
+            <p id="hazard-status" class="hazard-status" aria-live="polite"></p>
+            <div id="hazard-controls" class="hazard-controls" role="group" aria-describedby="hazard-disclaimer"></div>
+            <div id="hazard-legend" class="hazard-legend" hidden></div>
+            <p id="hazard-disclaimer" class="hazard-disclaimer">このレイヤーは災害の想定区域を示すもので、現在の被害状況を示すものではありません。避難や安全確保については、自治体・気象庁などの最新の公式情報を確認してください。</p>
+          </section>
+          <p class="plateau-note">PLATEAUデータは都市構造や整備時点の情報を表すもので、現在の被害状況を示すものではありません。避難や安全確保については、自治体・気象庁などの最新の公式情報を確認してください。</p>
+          <p class="plateau-source">出典: <a href="https://www.mlit.go.jp/plateau/" target="_blank" rel="noreferrer noopener">国土交通省 PLATEAU</a></p>
+        </section>
       </details>
 
       <div class="map-note"><strong>位置・道路について</strong><span>代表点や推定位置を含みます。「通行実績」は現在の通行可を保証しません。規制情報と道路管理者の案内を優先してください。</span></div>
