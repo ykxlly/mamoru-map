@@ -13,7 +13,7 @@ permissions:
   actions: write
 jobs:
   gate:
-    if: ${{ vars.MAMORU_AGENT_AUTO_RELEASE_ENABLED == 'true' && github.ref == 'refs/heads/feature/guarded-low-risk-auto-release' }}
+    if: ${{ vars.MAMORU_AGENT_AUTO_RELEASE_ENABLED == 'true' && github.ref == 'refs/heads/integration/guarded-low-risk-auto-release' }}
     runs-on: ubuntu-latest
     outputs:
       allowed: ${{ steps.policy.outputs.allowed }}
@@ -41,7 +41,6 @@ jobs:
   release:
     needs: gate
     if: ${{ needs.gate.outputs.allowed == 'true' && vars.MAMORU_AGENT_AUTO_RELEASE_ENABLED == 'true' }}
-    environment: production
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
