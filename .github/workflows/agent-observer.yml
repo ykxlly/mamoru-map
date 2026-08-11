@@ -30,4 +30,3 @@ jobs:
           name: agent-observer-${{ github.run_id }}
           path: artifacts/agent/stage-1-report.json
           retention-days: 7
-

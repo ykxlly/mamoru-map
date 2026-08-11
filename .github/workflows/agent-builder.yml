@@ -55,4 +55,3 @@ jobs:
           git commit -m "Improve accessibility for issue #${ISSUE_NUMBER}"
           git push origin "$branch"
           gh pr create --base master --head "$branch" --title "Agent improvement for #${ISSUE_NUMBER}" --body "Closes #${ISSUE_NUMBER}. Preview approval required; no production deployment."
-
