@@ -66,7 +66,8 @@ const state = {
   plateau3dConfig: null,
   plateau3dEnabled: false,
   plateau3dRenderer: null,
-  plateau3dLoadPromise: null
+  plateau3dLoadPromise: null,
+  plateauRegions: []
 };
 
 // 気象庁の公開タイルを、利用者が選んだときだけ取得する。雨雲は最新の観測1枚であり、
@@ -831,7 +832,8 @@ async function populatePlateauAreas() {
     const response = await fetch(`${apiBase}/api/plateau/regions`, { headers: { accept: 'application/json' }, priority: 'low' });
     if (response.ok) {
       const payload = await response.json();
-      (payload.regions || []).filter((region) => region.is_available).forEach((region) => {
+      state.plateauRegions = (payload.regions || []).filter((region) => region.is_available);
+      state.plateauRegions.forEach((region) => {
         const code = String(region.municipality_code || '').trim();
         if (/^\d{5}$/.test(code) && !choices.has(code)) choices.set(code, { id: `plateau-${code}`, municipality_code: code, area: `${region.prefecture_name || ''}${region.city_name || ''}` });
       });
@@ -842,6 +844,27 @@ async function populatePlateauAreas() {
     select.append(new Option(report.area, report.id));
   });
   select.disabled = choices.size === 0;
+  renderPlateauRegionBrowser();
+}
+
+function renderPlateauRegionBrowser() {
+  const list = $('#plateau-region-list'); const count = $('#plateau-region-count');
+  if (!list || !count) return;
+  const query = String($('#plateau-region-search')?.value || '').trim().toLocaleLowerCase('ja');
+  const regions = state.plateauRegions.filter((region) => `${region.prefecture_name || ''}${region.city_name || ''}`.toLocaleLowerCase('ja').includes(query));
+  list.replaceChildren();
+  if (!state.plateauRegions.length) { count.textContent = '対応自治体を取得できませんでした。地図または一覧から地域を選ぶと確認できます。'; return; }
+  count.textContent = query ? `${regions.length}件の対応自治体` : `対応自治体 ${regions.length}件`;
+  const fragment = document.createDocumentFragment();
+  regions.slice(0, 80).forEach((region) => {
+    const code = String(region.municipality_code || '');
+    const item = element('li'); const button = element('button', '', `${region.prefecture_name || ''}${region.city_name || code}`);
+    button.type = 'button'; button.addEventListener('click', () => {
+      const select = $('#plateau-area-select'); select.value = `plateau-${code}`; select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    item.append(button); fragment.append(item);
+  });
+  list.append(fragment);
 }
 
 function syncPlateauAreaSelection(report) {
@@ -1213,6 +1236,7 @@ function bindControls() {
     if (!onboardingSeen) window.setTimeout(() => onboarding.showModal(), 300);
   }
   const form = $('#filter-form');
+  $('#plateau-region-search')?.addEventListener('input', renderPlateauRegionBrowser);
   form.addEventListener('submit', (event) => { event.preventDefault(); scheduleRender(); });
   $('#search-query').addEventListener('input', scheduleRender);
   ['#filter-area', '#filter-type', '#filter-sort', '#emergency-only'].forEach((selector) => $(selector).addEventListener('change', scheduleRender));

@@ -95,6 +95,15 @@
           <label class="plateau-area-picker" for="plateau-area-select">自治体
             <select id="plateau-area-select" disabled><option value="">まず地図か一覧から地域を選択</option></select>
           </label>
+          <details id="plateau-region-browser" class="plateau-region-browser">
+            <summary>PLATEAU対応自治体を探す</summary>
+            <p>地図上の推定位置ではなく、公式データに登録された自治体名から選びます。</p>
+            <label for="plateau-region-search">自治体名で検索
+              <input id="plateau-region-search" type="search" autocomplete="off" placeholder="例：千代田区、熊本市">
+            </label>
+            <p id="plateau-region-count" class="plateau-region-count" aria-live="polite">対応自治体を確認中です</p>
+            <ul id="plateau-region-list" class="plateau-region-list"></ul>
+          </details>
           <p id="plateau-status" class="plateau-status" data-state="unknown">地図の絵文字、または一覧の情報を選ぶと対応状況を確認できます</p>
           <div id="plateau-details" class="plateau-details" hidden></div>
           <section id="plateau-3d-panel" class="plateau-3d-panel" aria-labelledby="plateau-3d-title" hidden>

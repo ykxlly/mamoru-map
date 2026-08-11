@@ -261,6 +261,14 @@
   .plateau-panel h3 { font-size: .8rem; }
   .plateau-area-picker { display: grid; gap: .2rem; margin-block-start: .55rem; color: var(--muted); font-size: .68rem; font-weight: 800; }
   .plateau-area-picker select { min-block-size: 2.5rem; inline-size: 100%; padding-inline: .55rem; border: 1px solid #b5c3c0; border-radius: .45rem; color: var(--ink); background: var(--surface); font-size: .76rem; }
+  .plateau-region-browser { margin-block-start: .6rem; border: 1px solid var(--line); border-radius: .45rem; background: var(--surface-soft); }
+  .plateau-region-browser summary { min-block-size: 2.6rem; display: flex; align-items: center; padding-inline: .6rem; color: var(--teal); font-size: .75rem; font-weight: 900; cursor: pointer; }
+  .plateau-region-browser > p, .plateau-region-browser > label { display: grid; gap: .3rem; margin: .35rem .6rem; color: var(--muted); font-size: .67rem; line-height: 1.45; }
+  .plateau-region-browser input { min-block-size: 2.4rem; padding-inline: .5rem; border: 1px solid #b5c3c0; border-radius: .4rem; color: var(--ink); background: #fff; font: inherit; }
+  .plateau-region-count { font-weight: 800; }
+  .plateau-region-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .35rem; max-block-size: 13rem; margin: .55rem .6rem .65rem; padding: 0; overflow-y: auto; list-style: none; }
+  .plateau-region-list button { inline-size: 100%; min-block-size: 2.35rem; padding: .35rem .45rem; border: 1px solid #c7d6d2; border-radius: .35rem; color: var(--navy); background: #fff; font: inherit; font-size: .68rem; font-weight: 800; text-align: start; cursor: pointer; }
+  .plateau-region-list button:hover, .plateau-region-list button:focus-visible { border-color: var(--teal); background: var(--teal-soft); }
   .plateau-status { margin-block: .35rem; font-size: .78rem; font-weight: 800; }
   .plateau-status[data-state="supported"] { color: var(--teal); }
   .plateau-status[data-state="unsupported"], .plateau-status[data-state="unknown"] { color: var(--muted); }
