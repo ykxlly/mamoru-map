@@ -66,6 +66,14 @@
         </fieldset>
         <fieldset>
           <legend>参考レイヤー</legend>
+          <label><input id="layer-rain" type="checkbox"> 🌧️ 雨雲レーダー（気象庁）</label>
+          <p id="rain-status" class="layer-hint" role="status" aria-live="polite"></p>
+          <label><input id="layer-risk-land" type="checkbox"> ⛰️ 土砂災害の危険度（気象庁）</label>
+          <p id="risk-land-status" class="layer-hint" role="status" aria-live="polite"></p>
+          <label><input id="layer-risk-inund" type="checkbox"> 🌊 浸水の危険度（気象庁）</label>
+          <p id="risk-inund-status" class="layer-hint" role="status" aria-live="polite"></p>
+          <label><input id="layer-thunder" type="checkbox"> ⚡ 雷の活動度（気象庁）</label>
+          <p id="thunder-status" class="layer-hint" role="status" aria-live="polite"></p>
           <label><input id="layer-shelters" type="checkbox"> 🏠 指定緊急避難場所（地震）</label>
           <p class="layer-hint">国土地理院の位置情報です。実際に開設されているかは各自治体の発表を確認してください。</p>
         </fieldset>

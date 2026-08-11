@@ -49,8 +49,86 @@ const state = {
   selectedBucketIndex: null
 };
 
+// 気象庁の公開タイルを、利用者が選んだときだけ取得する。雨雲は最新の観測1枚であり、
+// アニメーションや予報タイルは表示しない。
+const JMA_TILE_LAYERS = {
+  rain: {
+    id: 'jma-rain-radar', toggle: '#layer-rain', status: '#rain-status',
+    index: 'https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json',
+    path: (time) => `https://www.jma.go.jp/bosai/jmatile/data/nowc/${time.basetime}/none/${time.validtime}/surf/hrpns/{z}/{x}/{y}.png`,
+    label: '雨雲レーダー', opacity: 0.6, maxzoom: 10,
+    attribution: '<a href="https://www.jma.go.jp/bosai/nowc/" target="_blank" rel="noreferrer">気象庁 ナウキャスト</a>'
+  },
+  land: {
+    id: 'jma-risk-land', toggle: '#layer-risk-land', status: '#risk-land-status',
+    index: 'https://www.jma.go.jp/bosai/jmatile/data/risk/targetTimes.json',
+    path: (time) => `https://www.jma.go.jp/bosai/jmatile/data/risk/${time.basetime}/none/${time.validtime}/surf/land/{z}/{x}/{y}.png`,
+    label: '土砂災害の危険度', opacity: 0.65, maxzoom: 12,
+    attribution: '<a href="https://www.jma.go.jp/bosai/risk/" target="_blank" rel="noreferrer">気象庁 危険度分布</a>'
+  },
+  inund: {
+    id: 'jma-risk-inund', toggle: '#layer-risk-inund', status: '#risk-inund-status',
+    index: 'https://www.jma.go.jp/bosai/jmatile/data/risk/targetTimes.json',
+    path: (time) => `https://www.jma.go.jp/bosai/jmatile/data/risk/${time.basetime}/none/${time.validtime}/surf/inund/{z}/{x}/{y}.png`,
+    label: '浸水の危険度', opacity: 0.65, maxzoom: 12,
+    attribution: '<a href="https://www.jma.go.jp/bosai/risk/" target="_blank" rel="noreferrer">気象庁 危険度分布</a>'
+  },
+  thunder: {
+    id: 'jma-nowc-thunder', toggle: '#layer-thunder', status: '#thunder-status',
+    index: 'https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N3.json',
+    path: (time) => `https://www.jma.go.jp/bosai/jmatile/data/nowc/${time.basetime}/none/${time.validtime}/surf/thns/{z}/{x}/{y}.png`,
+    label: '雷の活動度', opacity: 0.6, maxzoom: 10,
+    attribution: '<a href="https://www.jma.go.jp/bosai/nowc/" target="_blank" rel="noreferrer">気象庁 ナウキャスト</a>'
+  }
+};
+
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
+
+function formatJmaTileTime(value) {
+  const digits = String(value || '');
+  if (!/^\d{12,14}$/.test(digits)) return '最新';
+  return `${digits.slice(0, 4)}/${digits.slice(4, 6)}/${digits.slice(6, 8)} ${digits.slice(8, 10)}:${digits.slice(10, 12)}`;
+}
+
+async function toggleJmaTileLayer(key, enabled) {
+  const config = JMA_TILE_LAYERS[key];
+  const status = $(config.status);
+  const map = state.map;
+  if (!map || !state.mapReady) {
+    if (status) status.textContent = '地図の準備が完了してから表示します。';
+    return;
+  }
+  const remove = () => {
+    if (map.getLayer(config.id)) map.removeLayer(config.id);
+    if (map.getSource(config.id)) map.removeSource(config.id);
+  };
+  remove();
+  if (!enabled) {
+    if (status) status.textContent = '';
+    return;
+  }
+  if (status) status.textContent = '気象庁の最新時刻を確認しています…';
+  try {
+    const response = await fetch(config.index, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`JMA index ${response.status}`);
+    const times = await response.json();
+    const observed = times.find((item) => item.basetime === item.validtime) || times[0];
+    if (!observed?.basetime || !observed?.validtime) throw new Error('JMA tile time missing');
+    map.addSource(config.id, {
+      type: 'raster', tiles: [config.path(observed)], tileSize: 256,
+      maxzoom: config.maxzoom, attribution: config.attribution
+    });
+    const before = map.getLayer('report-halo') ? 'report-halo' : undefined;
+    if (before) map.addLayer({ id: config.id, type: 'raster', source: config.id, paint: { 'raster-opacity': config.opacity } }, before);
+    else map.addLayer({ id: config.id, type: 'raster', source: config.id, paint: { 'raster-opacity': config.opacity } });
+    if (status) status.textContent = `${formatJmaTileTime(observed.basetime)}時点の${config.label}（気象庁）`;
+  } catch {
+    remove();
+    const input = $(config.toggle); if (input) input.checked = false;
+    if (status) status.textContent = `${config.label}を取得できませんでした。時間をおいて再度お試しください。`;
+  }
+}
 
 function element(tag, className = '', text = '') {
   const node = document.createElement(tag);
@@ -857,6 +935,10 @@ function bindControls() {
   }));
   const sheltersToggle = $('#layer-shelters');
   if (sheltersToggle) sheltersToggle.addEventListener('change', (event) => toggleReferenceLayer('shelters', '/api/shelters', event.target.checked));
+  Object.entries(JMA_TILE_LAYERS).forEach(([key, config]) => {
+    const toggle = $(config.toggle);
+    if (toggle) toggle.addEventListener('change', (event) => toggleJmaTileLayer(key, event.target.checked));
+  });
   // 給水拠点は対象エリア（熊本）の公式オープンデータが未整備のため現在UI非提供。
   // データ源が整い次第、#layer-water トグルを戻せば water ソース/レイヤーで表示できる。
   const waterToggle = $('#layer-water');
