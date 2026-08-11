@@ -37,7 +37,8 @@ export function evaluate({ files = [], diff = '', labels = [], severity, checks 
   if (EXTERNAL_URL.test(diff)) reasons.push('external_url_detected');
   const required = ['preview', 'tests', 'nodeCheck', 'diffCheck', 'wranglerDryRun', 'secretScan', 'desktop', 'mobile390', 'console', 'health', 'reports', 'admin401', 'rollback'];
   for (const check of required) if (checks[check] !== true) reasons.push(`check_failed:${check}`);
-  return { decision: reasons.length ? 'HUMAN_APPROVAL_REQUIRED' : 'AUTO_RELEASE_ALLOWED', reasons, files: names, changedLines: countChangedLines(diff) };
+  const denied = reasons.some((reason) => ['protected_path', 'dependency_change', 'secret_detected', 'external_url_detected', 'file_count_limit', 'line_count_limit'].includes(reason));
+  return { decision: denied ? 'RELEASE_DENIED' : reasons.length ? 'HUMAN_APPROVAL_REQUIRED' : 'AUTO_RELEASE_ALLOWED', reasons, files: names, changedLines: countChangedLines(diff) };
 }
 
 export function gitDiff(base = 'HEAD^') {

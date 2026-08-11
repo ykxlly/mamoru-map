@@ -1,57 +1,119 @@
 name: Guarded low-risk automatic release
+
 "on":
   workflow_dispatch:
     inputs:
+      target_commit: { required: true, type: string }
+      issue_number: { required: true, type: string }
+      fingerprint: { required: true, type: string }
+      severity: { required: true, type: choice, options: [minor, accessibility] }
       preview_url: { required: true, type: string }
-      deployment_id: { required: true, type: string }
       rollback_deployment_id: { required: true, type: string }
       desktop_confirmed: { required: true, type: boolean, default: false }
-      severity: { required: true, type: string }
-      agent_safe_label: { required: true, type: boolean, default: false }
+      mobile_390_confirmed: { required: true, type: boolean, default: false }
+      console_confirmed: { required: true, type: boolean, default: false }
+
 permissions:
   contents: read
+  issues: read
   actions: write
+
 jobs:
   gate:
-    if: ${{ vars.MAMORU_AGENT_AUTO_RELEASE_ENABLED == 'true' && github.ref == 'refs/heads/integration/guarded-low-risk-auto-release' }}
+    if: ${{ vars.MAMORU_AGENT_AUTO_RELEASE_ENABLED == 'true' && github.ref == 'refs/heads/integration/autonomous-release-ready' }}
     runs-on: ubuntu-latest
     outputs:
       allowed: ${{ steps.policy.outputs.allowed }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target_commit }}
+          fetch-depth: 2
+      - name: Verify immutable candidate
+        run: test "$(git rev-parse HEAD)" = "${{ inputs.target_commit }}"
       - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: npm }
+        with:
+          node-version: 22
+          cache: npm
       - run: npm ci
-      - run: node --test agent/low-risk-policy.test.js agent/index.test.js agent/workflow.test.js
-      - run: npm test
-      - run: node --check agent/low-risk-policy.js && node --check agent/rollback-dry-run.js
-      - run: git diff --check
+      - run: node --test worker/index.test.js agent/index.test.js agent/workflow.test.js agent/low-risk-policy.test.js
+      - name: Syntax checks
+        shell: bash
+        run: |
+          node --check worker/index.js
+          find agent -maxdepth 1 -name '*.js' -print0 | xargs -0 -n1 node --check
+      - run: git diff --check HEAD^
       - run: npx wrangler deploy --dry-run --outdir=dist-agent-auto-release
-      - name: Preview and unauthenticated admin smoke test
-        env: { PREVIEW_URL: ${{ inputs.preview_url }} }
+      - name: Verify issue label and fingerprint uniqueness
+        id: issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+          FINGERPRINT: ${{ inputs.fingerprint }}
+        shell: bash
+        run: |
+          labels="$(gh issue view "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --json labels --jq '[.labels[].name] | join(",")')"
+          echo "$labels" | tr ',' '\n' | grep -Fx agent-safe
+          if gh issue view "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --json comments --jq '.comments[].body' | grep -F "AUTO_RELEASE_SUCCESS fingerprint=$FINGERPRINT"; then exit 1; fi
+          echo "labels=$labels" >> "$GITHUB_OUTPUT"
+      - name: Preview smoke test
+        env:
+          PREVIEW_URL: ${{ inputs.preview_url }}
         run: node agent/smoke-check.js
       - run: node agent/rollback-dry-run.js "${{ inputs.rollback_deployment_id }}"
-      - id: policy
-        env: { DESKTOP_CONFIRMED: ${{ inputs.desktop_confirmed }}, SEVERITY: ${{ inputs.severity }}, AGENT_SAFE: ${{ inputs.agent_safe_label }} }
+      - name: Deterministic release policy
+        id: policy
+        env:
+          BASE_COMMIT: HEAD^
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+          ISSUE_LABELS: ${{ steps.issue.outputs.labels }}
+          FINGERPRINT: ${{ inputs.fingerprint }}
+          SEVERITY: ${{ inputs.severity }}
+          CHECK_PREVIEW: true
+          CHECK_TESTS: true
+          CHECK_NODECHECK: true
+          CHECK_DIFFCHECK: true
+          CHECK_WRANGLERDRYRUN: true
+          CHECK_SECRETSCAN: true
+          CHECK_DESKTOP: ${{ inputs.desktop_confirmed }}
+          CHECK_MOBILE390: ${{ inputs.mobile_390_confirmed }}
+          CHECK_CONSOLE: ${{ inputs.console_confirmed }}
+          CHECK_HEALTH: true
+          CHECK_REPORTS: true
+          CHECK_ADMIN401: true
+          CHECK_ROLLBACK: true
         run: |
-          test "$DESKTOP_CONFIRMED" = true
-          test "$AGENT_SAFE" = true
-          test "$SEVERITY" = minor -o "$SEVERITY" = accessibility
+          node agent/evaluate-release.js
           echo 'allowed=true' >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: low-risk-policy-${{ github.run_id }}
+          path: auto-release-policy.json
+          retention-days: 30
   release:
     needs: gate
     if: ${{ needs.gate.outputs.allowed == 'true' && vars.MAMORU_AGENT_AUTO_RELEASE_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: echo "AUTO_RELEASE_ALLOWED; deployment=${{ inputs.deployment_id }}"
-      - name: Deploy low-risk release
+        with:
+          ref: ${{ inputs.target_commit }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Deploy verified candidate
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npx wrangler deploy
+      - name: Production smoke test
+        env:
+          PREVIEW_URL: ${{ vars.MAMORU_AGENT_TARGET_URL }}
+        run: node agent/smoke-check.js
       - name: Kill switch on failure
         if: ${{ failure() }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh variable set MAMORU_AGENT_AUTO_RELEASE_ENABLED --body false --repo "${{ github.repository }}"
+        run: gh variable set MAMORU_AGENT_AUTO_RELEASE_ENABLED --body false --repo "$GITHUB_REPOSITORY"

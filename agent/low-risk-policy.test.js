@@ -19,3 +19,10 @@ for (const [name, input] of [
   const result = evaluate({ severity: 'minor', labels: ['agent-safe'], checks, ...input, ...(name === 'missing label' ? { labels: [] } : {}) });
   assert.notEqual(result.decision, 'AUTO_RELEASE_ALLOWED');
 });
+
+test('denies protected and secret-bearing changes', () => {
+  for (const input of [
+    { files: ['worker/index.js'], diff: '+const safe = true;' },
+    { files: ['public/index.html'], diff: '+PRIVATE_KEY=unsafe' }
+  ]) assert.equal(evaluate({ labels: ['agent-safe'], severity: 'minor', checks, ...input }).decision, 'RELEASE_DENIED');
+});
