@@ -1,0 +1,33 @@
+name: Autonomous Agent Observer
+
+"on":
+  workflow_dispatch:
+  schedule:
+    - cron: '*/30 * * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  observe:
+    if: ${{ vars.MAMORU_AGENT_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Observe allowlisted public endpoints
+        env:
+          MAMORU_AGENT_ENABLED: ${{ vars.MAMORU_AGENT_ENABLED }}
+          MAMORU_AGENT_TARGET_URL: ${{ vars.MAMORU_AGENT_TARGET_URL }}
+        run: npm run agent:observe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent-observer-${{ github.run_id }}
+          path: artifacts/agent/stage-1-report.json
+          retention-days: 7
+

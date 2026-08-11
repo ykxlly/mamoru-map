@@ -957,6 +957,12 @@ function isInJapan(latitude, longitude) {
     && Number(longitude) >= 122 && Number(longitude) <= 154.5;
 }
 
+function isInKumamotoDisasterArea(latitude, longitude) {
+  return isInJapan(latitude, longitude)
+    && Number(latitude) >= 31.8 && Number(latitude) <= 33.3
+    && Number(longitude) >= 129.9 && Number(longitude) <= 131.5;
+}
+
 function nearestPrefecture(latitude, longitude) {
   if (!isInJapan(latitude, longitude)) return 'unknown';
   let nearest = null;
@@ -1184,7 +1190,7 @@ function parseToyotaVics(value, _sourceUrl) {
   return document.results.flatMap((record) => {
     const latitude = coordinate(record?.Lat, -90, 90);
     const longitude = coordinate(record?.Lon, -180, 180);
-    if (!isInJapan(latitude, longitude)) return [];
+    if (!isInKumamotoDisasterArea(latitude, longitude)) return [];
     const regulation = trim([record.RegulationName, record.RegulationDetailName].filter((part) => part && part !== '詳細無し').join('・') || '交通規制', 100);
     const cause = trim([record.CauseName, record.CauseDetailName].filter((part) => part && part !== '詳細無し').join('・') || '原因情報なし', 100);
     const title = trim(`トヨタ道路情報：${regulation}（${cause}）`, 200);
@@ -1262,8 +1268,9 @@ function parseToyotaPassableRoute(html, sourceUrl) {
     const longitude = Number(match[1]);
     const latitude = Number(match[2]);
     const label = trim(stripHtmlText(match[3]), 200);
-    if (!label || !isInJapan(latitude, longitude)) continue;
-    const area = findArea(label) !== 'unknown' ? findArea(label) : nearestPrefecture(latitude, longitude);
+    if (!label || !isInKumamotoDisasterArea(latitude, longitude)) continue;
+    const detectedArea = findArea(label);
+    const area = (detectedArea !== 'unknown' ? detectedArea : nearestPrefecture(latitude, longitude)).replace(/^熊本県/, '');
     const publishedAt = timestampFromCompactJst(label.match(/(?:_|\b)(\d{12})(?:\b|$)/)?.[1]);
     const summary = trim(`${notice || 'トヨタ「通れた道マップ」で災害時道路情報を提供しています。'} 通行実績は通行可能を保証するものではありません。現地の規制と道路管理者の情報を優先してください。`, 500);
     items.push({
@@ -1326,7 +1333,7 @@ function parseGeoJsonFeed(value) {
     const latitude = Number(coordinates?.[1]);
     const link = validDiscoverySourceUrl(properties.source_url);
     const title = trim(properties.title, 200);
-    if (!isInJapan(latitude, longitude) || !link || !title) return [];
+    if (!isInKumamotoDisasterArea(latitude, longitude) || !link || !title) return [];
     const metadata = [properties.source_name, properties.kind, properties.municipality, properties.severity]
       .filter(Boolean).join(' / ');
     return [{

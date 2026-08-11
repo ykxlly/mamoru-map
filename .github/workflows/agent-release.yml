@@ -1,0 +1,57 @@
+name: Autonomous Agent Release Gate
+"on":
+  workflow_dispatch:
+    inputs:
+      preview_url:
+        required: true
+        type: string
+      deployment_id:
+        required: true
+        type: string
+      rollback_deployment_id:
+        required: true
+        type: string
+      commit:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  release:
+    if: ${{ vars.MAMORU_AGENT_RELEASE_ENABLED == 'true' }}
+    environment: production
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit }}
+      - name: Verify immutable release inputs
+        run: test "$(git rev-parse HEAD)" = "${{ inputs.commit }}" && test -n "${{ inputs.deployment_id }}" && test -n "${{ inputs.rollback_deployment_id }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci && npm test
+      - name: Verify approved preview
+        env:
+          PREVIEW_URL: ${{ inputs.preview_url }}
+        run: node --input-type=module -e "const r=await fetch(process.env.PREVIEW_URL+'/api/health'); if(!r.ok) throw new Error('preview failed '+r.status)"
+      - name: Deploy only after GitHub Environment approval
+        id: deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy
+      - name: Production verification
+        id: verify
+        continue-on-error: true
+        run: node --input-type=module -e "const r=await fetch('https://mamoru-map-api.krin6525.workers.dev/api/health'); if(!r.ok) throw new Error('production health '+r.status)"
+      - name: Roll back only after an approved deploy regresses health
+        if: ${{ steps.deploy.outcome == 'success' && steps.verify.outcome == 'failure' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler rollback "${{ inputs.rollback_deployment_id }}" --message "Automated rollback after failed approved deployment health check"
+      - name: Fail release after health regression
+        if: ${{ steps.verify.outcome == 'failure' }}
+        run: exit 1

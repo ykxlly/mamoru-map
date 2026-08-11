@@ -1,0 +1,32 @@
+name: Autonomous Agent Preview
+
+"on":
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    if: ${{ vars.MAMORU_AGENT_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run agent:test
+      - run: npm test
+      - run: git diff --check
+      - run: npx wrangler deploy --dry-run --outdir=dist
+      - name: Build safe preview artifact
+        run: node agent/preview-report.js
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mamoru-agent-preview-${{ github.run_id }}
+          path: artifacts/agent/preview
+          retention-days: 7

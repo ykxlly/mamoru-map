@@ -1,0 +1,58 @@
+name: Autonomous Agent Builder
+
+"on":
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Existing agent-safe issue number
+        required: true
+        type: number
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: read
+
+jobs:
+  build:
+    if: ${{ vars.MAMORU_AGENT_ENABLED == 'true' && vars.MAMORU_AGENT_BUILDER_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Read existing issue metadata only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+        run: gh issue view "$ISSUE_NUMBER" --json number,title,labels,body > "$RUNNER_TEMP/issue.json"
+      - name: Generate allowlisted low-risk improvement
+        env:
+          MAMORU_AGENT_BUILDER_ENABLED: ${{ vars.MAMORU_AGENT_BUILDER_ENABLED }}
+          ISSUE_FILE: ${{ runner.temp }}/issue.json
+        run: node agent/build.js
+      - run: npm run agent:test
+      - run: npm test
+      - run: git diff --check
+      - run: npx wrangler deploy --dry-run --outdir=dist
+      - name: Create one feature branch and PR when changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+        run: |
+          if git diff --quiet; then exit 0; fi
+          branch="agent/improve-${ISSUE_NUMBER}-safe-accessibility"
+          git config user.name "mamoru-agent[bot]"
+          git config user.email "mamoru-agent[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add agent/generated
+          git commit -m "Improve accessibility for issue #${ISSUE_NUMBER}"
+          git push origin "$branch"
+          gh pr create --base master --head "$branch" --title "Agent improvement for #${ISSUE_NUMBER}" --body "Closes #${ISSUE_NUMBER}. Preview approval required; no production deployment."
+
