@@ -13,6 +13,14 @@ export function canAutoFix(issue) {
     issue.autoFixable === true && issue.humanApprovalRequired !== true;
 }
 
+export function agentEnabled(value) {
+  return value === 'true';
+}
+
+export function builderEnabled(value) {
+  return value === 'true';
+}
+
 export function isProtectedTarget(target = {}) {
   const path = String(target.path || '');
   return BLOCKED_PATHS.some((prefix) => path === prefix || path.startsWith(`${prefix}/`)) ||
