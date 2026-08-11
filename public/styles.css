@@ -185,6 +185,10 @@
   .map-guide strong { color: var(--navy); font-size: .78rem; }
   .map-guide span { color: var(--muted); font-size: .67rem; line-height: 1.45; }
   .map-guide button { justify-self: start; min-block-size: 2.75rem; padding: .2rem .55rem; border: 1px solid #9eb9b2; border-radius: .35rem; color: var(--teal); background: #fff; font: inherit; font-weight: 850; cursor: pointer; }
+  .map-actions { position: absolute; inset: 4.5rem auto auto 1rem; z-index: 3; display: grid; gap: .35rem; max-inline-size: min(17rem, calc(100% - 2rem)); }
+  .map-actions button, #weather-refresh, #show-more-reports, #plateau-show-region { min-block-size: 2.75rem; padding-inline: .7rem; border: 1px solid #9eb9b2; border-radius: .45rem; color: var(--teal); background: #fff; font: inherit; font-weight: 800; cursor: pointer; }
+  .map-action-status { margin: 0; padding: .35rem .5rem; border-radius: .35rem; background: rgb(255 255 255 / 92%); color: var(--ink); font-size: .68rem; }
+  .map-center-marker { position: absolute; inset: 50% auto auto 50%; z-index: 2; transform: translate(-50%, -50%); color: #244f59; font-size: 1.35rem; font-weight: 400; line-height: 1; pointer-events: none; text-shadow: 0 1px 2px #fff; }
 
   .onboarding-dialog { inline-size: min(31rem, calc(100% - 2rem)); max-block-size: min(42rem, calc(100dvh - 2rem)); border: 0; border-radius: .9rem; padding: 0; color: var(--ink); box-shadow: 0 1.5rem 4rem rgb(12 35 46 / 32%); }
   .onboarding-dialog::backdrop { background: rgb(13 40 53 / 58%); }
@@ -575,6 +579,8 @@
     font-size: .62rem;
     font-weight: 800;
   }
+  #weather-location { display: block; color: var(--muted); font-size: .65rem; font-weight: 700; }
+  #weather-refresh { margin-block-start: .55rem; }
 
   .filter-form {
     padding: 0 1.35rem 1rem;
@@ -835,6 +841,7 @@
   .event-list-drawer[open] > summary > span:last-child::after { transform: rotate(180deg); }
   #drawer-visible-count { min-inline-size: 2.5rem; padding: .28rem .45rem; border-radius: 999px; color: #fff; background: var(--teal); text-align: center; }
   .event-list { min-block-size: 8rem; }
+  #show-more-reports { display: block; inline-size: calc(100% - 2rem); margin: .75rem auto 1rem; }
   .event-card {
     position: relative;
     container-type: inline-size;

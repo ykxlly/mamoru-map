@@ -33,7 +33,14 @@
   <main class="app-shell">
     <section class="map-region" aria-labelledby="map-title">
       <h1 id="map-title" class="visually-hidden">日本全国の災害情報マップ</h1>
-      <div id="map" role="region" aria-label="災害情報と履歴の地図"></div>
+      <div id="map" role="region" aria-label="災害情報と現在地の地図"></div>
+      <div class="map-center-marker" aria-hidden="true">＋</div>
+      <span class="visually-hidden" id="map-center-description">地図中央。現在地や災害発生地点とは異なります。</span>
+      <div class="map-actions">
+        <button id="locate-me" type="button" aria-label="現在地を地図の中心に表示">◎ 現在地</button>
+        <button id="clear-location" type="button" hidden>現在地を消す</button>
+        <p id="location-status" class="map-action-status" role="status"></p>
+      </div>
 
       <section class="map-guide" aria-label="まもるマップの使い方">
         <p class="map-guide-eyebrow">いま何が起きているか</p>
@@ -105,6 +112,7 @@
             <ul id="plateau-region-list" class="plateau-region-list"></ul>
           </details>
           <p id="plateau-status" class="plateau-status" data-state="unknown">地図の絵文字、または一覧の情報を選ぶと対応状況を確認できます</p>
+          <button id="plateau-show-region" type="button" hidden>地図でこの地域を見る</button>
           <div id="plateau-details" class="plateau-details" hidden></div>
           <section id="plateau-3d-panel" class="plateau-3d-panel" aria-labelledby="plateau-3d-title" hidden>
             <h4 id="plateau-3d-title">建築物3Dモデル</h4>
@@ -152,7 +160,7 @@
 
       <section id="weather-panel" class="weather-panel" aria-labelledby="weather-title" aria-busy="true">
         <div class="weather-heading">
-          <div><p class="weather-eyebrow">LOCAL REFERENCE WEATHER</p><h3 id="weather-title">参考気象・熊本市中心部</h3></div>
+          <div><p class="weather-eyebrow">POINT REFERENCE WEATHER</p><h3 id="weather-title">地図中央の天気</h3><small id="weather-location">地図中央を確認中</small></div>
           <time id="weather-time">取得中</time>
         </div>
         <dl class="weather-metrics">
@@ -169,6 +177,7 @@
           <p id="heat-index-note" class="heat-index-note"></p>
         </div>
         <p id="weather-notice" class="weather-notice" aria-live="polite">気象参考情報を読み込んでいます。</p>
+        <button id="weather-refresh" type="button">地図中央の天気を更新</button>
         <a href="https://open-meteo.com/" target="_blank" rel="noreferrer noopener">Weather data by Open-Meteo.com</a>
       </section>
 
@@ -220,10 +229,11 @@
 
       <details id="event-list-drawer" class="event-list-drawer" open>
         <summary>
-          <span><strong>災害情報一覧</strong><small>地図の絵文字と連動</small></span>
+          <span><strong>災害情報</strong><small id="list-summary">地図の絵文字と連動</small></span>
           <span><output id="drawer-visible-count" for="event-list">0</output> 件</span>
         </summary>
-        <section id="event-list" class="event-list" aria-label="公開情報一覧" tabindex="-1" aria-busy="true"></section>
+         <section id="event-list" class="event-list" aria-label="公開情報一覧" tabindex="-1" aria-busy="true"></section>
+         <button id="show-more-reports" type="button" hidden>さらに表示</button>
       </details>
 
       <section class="lifeline-panel" aria-labelledby="lifeline-title">

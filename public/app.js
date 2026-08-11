@@ -67,7 +67,13 @@ const state = {
   plateau3dEnabled: false,
   plateau3dRenderer: null,
   plateau3dLoadPromise: null,
-  plateauRegions: []
+  plateauRegions: [],
+  listLimit: 30,
+  weatherAbort: null,
+  weatherTimer: null,
+  weatherKey: '',
+  locationMarker: null,
+  locationAccuracyId: 'user-location-accuracy'
 };
 
 // 気象庁の公開タイルを、利用者が選んだときだけ取得する。雨雲は最新の観測1枚であり、
@@ -256,6 +262,7 @@ function initializeMap() {
       map.on('click', layer, selectFeature);
     });
     state.mapReady = true;
+    map.on('moveend', scheduleCenterWeather);
     updateMap();
     fitInitialBounds();
   });
@@ -677,6 +684,7 @@ function renderSummary() {
 }
 
 function scheduleRender() {
+  state.listLimit = 30;
   if (state.renderFrame) cancelAnimationFrame(state.renderFrame);
   state.renderFrame = requestAnimationFrame(() => {
     state.renderFrame = null;
@@ -712,9 +720,14 @@ function renderList() {
     list.append(empty);
     return;
   }
+  const limit = Math.min(state.listLimit, state.filtered.length);
   const fragment = document.createDocumentFragment();
-  state.filtered.forEach((report) => fragment.append(buildReportCard(report)));
+  state.filtered.slice(0, limit).forEach((report) => fragment.append(buildReportCard(report)));
   list.append(fragment);
+  const more = $('#show-more-reports');
+  if (more) { const remaining = state.filtered.length - limit; more.hidden = remaining <= 0; more.textContent = `さらに表示（残り${remaining}件）`; }
+  const summary = $('#list-summary');
+  if (summary) summary.textContent = state.selectedId ? `選択中の情報あり・${state.filtered.length}件` : `地図の絵文字と連動・${state.filtered.length}件`;
 }
 
 function buildReportCard(report) {
@@ -1141,29 +1154,58 @@ function formatWeatherMetric(metric, digits = 1) {
   return `${new Intl.NumberFormat('ja-JP', { maximumFractionDigits: digits }).format(value)} ${metric?.unit || ''}`.trim();
 }
 
-async function loadWeather() {
+async function loadWeather(force = false) {
   const panel = $('#weather-panel');
+  const center = state.mapReady ? state.map.getCenter() : { lat: 32.8031, lng: 130.7079 };
+  const lat = Number(center.lat.toFixed(2)); const lon = Number(center.lng.toFixed(2)); const key = `${lat},${lon}`;
+  if (!force && key === state.weatherKey) return;
+  state.weatherKey = key;
+  state.weatherAbort?.abort(); const controller = state.weatherAbort = new AbortController();
+  $('#weather-location').textContent = `地図中央付近（${lat.toFixed(2)}, ${lon.toFixed(2)}）`;
+  $('#weather-notice').textContent = '地図中央の参考気象情報を更新中です。';
+  panel.setAttribute('aria-busy', 'true');
   try {
-    const response = await fetch(`${apiBase}/api/weather`, {
+    const response = await fetch(`${apiBase}/api/weather?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`, {
       headers: { accept: 'application/json' },
-      priority: 'low'
+      priority: 'low', signal: controller.signal
     });
     if (!response.ok) throw new Error(`Weather API ${response.status}`);
     const weather = await response.json();
+    if (controller.signal.aborted || key !== state.weatherKey) return;
     $('#weather-temperature').textContent = formatWeatherMetric(weather.temperature_2m);
     $('#weather-precipitation').textContent = formatWeatherMetric(weather.precipitation, 2);
     $('#weather-wind').textContent = formatWeatherMetric(weather.wind_speed_10m);
     $('#weather-time').textContent = `${formatShortTime(weather.observed_at)}時点`;
-    $('#weather-notice').textContent = weather.notice || 'モデルによる参考値です。';
+    $('#weather-notice').textContent = weather.notice || '表示中の地図中央付近の参考気象情報です。避難や安全確保は気象庁・自治体の最新情報を確認してください。';
     renderHeatIndex(weather.heat_index);
     panel.setAttribute('aria-busy', 'false');
     panel.dataset.state = 'ready';
-  } catch {
+  } catch (error) {
+    if (error.name === 'AbortError') return;
     $('#weather-time').textContent = '取得できません';
-    $('#weather-notice').textContent = '現在の気象参考情報を取得できませんでした。気象庁・自治体の発表をご確認ください。';
+    $('#weather-notice').textContent = '地図中央の天気を取得できませんでした。前の情報を確認するか、更新を再試行してください。';
     panel.setAttribute('aria-busy', 'false');
     panel.dataset.state = 'error';
   }
+}
+
+function scheduleCenterWeather() {
+  window.clearTimeout(state.weatherTimer);
+  state.weatherTimer = window.setTimeout(() => loadWeather(), 500);
+}
+
+function locateUser() {
+  const status = $('#location-status');
+  if (!window.isSecureContext || !navigator.geolocation) { status.textContent = 'この環境では現在地を利用できません。地図は引き続き利用できます。'; return; }
+  status.textContent = '現在地を取得中です。';
+  navigator.geolocation.getCurrentPosition((position) => {
+    const { latitude, longitude } = position.coords;
+    const center = [longitude, latitude];
+    if (state.locationMarker) state.locationMarker.remove();
+    state.locationMarker = new maplibregl.Marker({ color: '#176d67' }).setLngLat(center).setPopup(new maplibregl.Popup({ closeButton: false }).setText('現在地')).addTo(state.map);
+    state.map.easeTo({ center, zoom: Math.max(state.map.getZoom(), 13), duration: reducedMotion ? 0 : 450 });
+    $('#clear-location').hidden = false; status.textContent = '現在地を地図に表示しています。位置情報は端末内だけで使用します。';
+  }, (error) => { status.textContent = error.code === error.PERMISSION_DENIED ? '位置情報の利用が許可されていません。ブラウザの設定を確認してください。' : error.code === error.TIMEOUT ? '現在地の取得に時間がかかっています。再試行してください。' : '現在地を取得できませんでした。地図は引き続き利用できます。'; }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 });
 }
 
 async function toggleReferenceLayer(kind, path, visible) {
@@ -1243,6 +1285,10 @@ function bindControls() {
     if (!onboardingSeen) window.setTimeout(() => onboarding.showModal(), 300);
   }
   const form = $('#filter-form');
+  $('#weather-refresh')?.addEventListener('click', () => loadWeather(true));
+  $('#locate-me')?.addEventListener('click', locateUser);
+  $('#clear-location')?.addEventListener('click', () => { state.locationMarker?.remove(); state.locationMarker = null; $('#clear-location').hidden = true; $('#location-status').textContent = '現在地表示を消しました。'; });
+  $('#show-more-reports')?.addEventListener('click', () => { state.listLimit += 30; renderList(); });
   $('#plateau-region-search')?.addEventListener('input', renderPlateauRegionBrowser);
   form.addEventListener('submit', (event) => { event.preventDefault(); scheduleRender(); });
   $('#search-query').addEventListener('input', scheduleRender);
