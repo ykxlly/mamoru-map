@@ -1,5 +1,5 @@
-const CACHE_NAME = 'mamoru-map-shell-v3';
-const SHELL_ASSETS = ['/', '/index.html', '/styles.css', '/app.js', '/manifest.json'];
+const CACHE_NAME = 'mamoru-map-shell-v5';
+const SHELL_ASSETS = ['/', '/index.html', '/styles.css', '/app.js', '/plateau-3d.js', '/manifest.json'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

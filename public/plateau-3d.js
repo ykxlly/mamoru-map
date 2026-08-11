@@ -6,6 +6,7 @@ import { KTX2Loader } from 'https://cdn.jsdelivr.net/npm/three@0.183.0/examples/
 
 const LAYER_ID = 'plateau-building-3d';
 let active = null;
+let diagnostics = { status: 'idle', loadedTiles: 0, visibleTiles: 0, renderedObjects: 0, lastError: null };
 
 function ecefToLngLatAlt(x, y, z) {
   const a = 6378137, e2 = 6.69437999014e-3, b = a * Math.sqrt(1 - e2), ep2 = (a * a - b * b) / (b * b);
@@ -26,6 +27,7 @@ function localTransform(map, coordinate) {
 export async function showPlateauBuildings(map, tilesetUrl) {
   if (!map?.isStyleLoaded?.() || !/^https:\/\/api\.plateauview\.mlit\.go\.jp\/datacatalog\/3dtiles\//.test(tilesetUrl)) throw new Error('invalid_3d_tileset');
   hidePlateauBuildings(map);
+  diagnostics = { status: 'loading', loadedTiles: 0, visibleTiles: 0, renderedObjects: 0, lastError: null };
   const runtime = { map, scene: null, renderer: null, tiles: null, tilesCamera: null, disposed: false, positioned: false, transform: null };
   const layer = {
     id: LAYER_ID, type: 'custom', renderingMode: '3d',
@@ -37,6 +39,7 @@ export async function showPlateauBuildings(map, tilesetUrl) {
       const tilesCamera = runtime.tilesCamera = new THREE.PerspectiveCamera();
       runtime.transform = localTransform(mapInstance, [0, 0, 0]);
       const tiles = runtime.tiles = new TilesRenderer(tilesetUrl);
+      tiles.addEventListener('load-model', () => { diagnostics.loadedTiles += 1; });
       scene.add(tiles.group); tiles.setCamera(tilesCamera); tiles.setResolutionFromRenderer(tilesCamera, renderer);
       const loader = new GLTFLoader(); const draco = new DRACOLoader();
       draco.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.183.0/examples/jsm/libs/draco/'); loader.setDRACOLoader(draco);
@@ -50,6 +53,7 @@ export async function showPlateauBuildings(map, tilesetUrl) {
         const rotation = new THREE.Matrix4().setFromMatrix3(new THREE.Matrix3().set(rootTransform[0], rootTransform[1], rootTransform[2], rootTransform[8], rootTransform[9], rootTransform[10], -rootTransform[4], -rootTransform[5], -rootTransform[6]));
         tiles.group.matrix.copy(new THREE.Matrix4().multiplyMatrices(rotation, new THREE.Matrix4().makeTranslation(-center.x, -center.y, -center.z)));
         tiles.group.matrixAutoUpdate = false; tiles.group.updateMatrixWorld(true); mapInstance.triggerRepaint();
+        diagnostics.status = 'ready'; diagnostics.renderedObjects = tiles.group.children.length;
       });
     },
     render(_gl, args) {
@@ -57,9 +61,9 @@ export async function showPlateauBuildings(map, tilesetUrl) {
       const camera = new THREE.PerspectiveCamera(); camera.projectionMatrix.fromArray(args.defaultProjectionData.mainMatrix); camera.projectionMatrix.multiply(runtime.transform);
       const p = new THREE.Matrix4().fromArray(args.projectionMatrix), view = new THREE.Matrix4().multiplyMatrices(p.clone().invert(), camera.projectionMatrix);
       const tilesCamera = runtime.tilesCamera; tilesCamera.projectionMatrix.copy(p); tilesCamera.matrixWorldInverse.copy(view); tilesCamera.matrixWorld.copy(view).invert();
-      runtime.renderer.resetState(); runtime.renderer.render(runtime.scene, camera); runtime.tiles.update(); runtime.map.triggerRepaint();
+      runtime.renderer.resetState(); runtime.renderer.render(runtime.scene, camera); runtime.tiles.update(); diagnostics.visibleTiles = runtime.tiles.visibleTiles?.size || 0; diagnostics.renderedObjects = runtime.scene.children.length; runtime.map.triggerRepaint();
     },
-    onRemove() { runtime.disposed = true; runtime.tiles?.dispose(); runtime.renderer?.dispose(); }
+    onRemove() { runtime.disposed = true; runtime.tiles?.dispose(); runtime.renderer?.dispose(); diagnostics.status = 'idle'; }
   };
   map.addLayer(layer); active = runtime;
 }
@@ -68,5 +72,4 @@ export function hidePlateauBuildings(map) {
   if (map?.getLayer?.(LAYER_ID)) map.removeLayer(LAYER_ID);
   active = null;
 }
-
-window.Plateau3D = { show: showPlateauBuildings, hide: hidePlateauBuildings };
+export function getDiagnostics() { return { ...diagnostics }; }

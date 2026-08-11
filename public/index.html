@@ -35,6 +35,12 @@
       <h1 id="map-title" class="visually-hidden">日本全国の災害情報マップ</h1>
       <div id="map" role="region" aria-label="災害情報と履歴の地図"></div>
 
+      <section class="map-guide" aria-label="まもるマップの使い方">
+        <p class="map-guide-eyebrow">いま何が起きているか</p>
+        <strong>地図の絵文字か、右の情報を選んでください</strong>
+        <span>選んだ情報は地図・一覧・PLATEAUの表示に連動します。</span>
+      </section>
+
       <details class="layer-panel">
         <summary>表示レイヤー</summary>
         <fieldset>
@@ -83,9 +89,24 @@
           <label><input name="basemap" type="radio" value="standard"> 標準地図</label>
         </fieldset>
         <section class="plateau-panel" aria-labelledby="plateau-title" aria-live="polite">
-          <h3 id="plateau-title">PLATEAU対応状況</h3>
-          <p id="plateau-status" class="plateau-status" data-state="unknown">地域を選択してください</p>
+          <p class="panel-eyebrow">地域を選んで確認</p>
+          <h3 id="plateau-title">PLATEAU・3D・想定リスク</h3>
+          <label class="plateau-area-picker" for="plateau-area-select">自治体
+            <select id="plateau-area-select" disabled><option value="">まず地図か一覧から地域を選択</option></select>
+          </label>
+          <p id="plateau-status" class="plateau-status" data-state="unknown">地図の絵文字、または一覧の情報を選ぶと対応状況を確認できます</p>
           <div id="plateau-details" class="plateau-details" hidden></div>
+          <section id="plateau-3d-panel" class="plateau-3d-panel" aria-labelledby="plateau-3d-title" hidden>
+            <h4 id="plateau-3d-title">建築物3Dモデル</h4>
+            <p id="plateau-3d-status" class="plateau-3d-status" aria-live="polite"></p>
+            <div class="plateau-3d-controls" role="group" aria-describedby="plateau-3d-disclaimer">
+              <label><input id="plateau-view-3d" type="checkbox" disabled> 地図を3Dに傾ける</label>
+              <label><input id="plateau-buildings-3d" type="checkbox" disabled> 建築物3Dモデルを表示</label>
+              <button id="plateau-return-2d" type="button" disabled>軽量な2D表示に戻す</button>
+            </div>
+            <dl id="plateau-3d-meta" class="plateau-3d-meta" hidden></dl>
+            <p id="plateau-3d-disclaimer" class="plateau-3d-disclaimer">建築物3Dモデルは都市構造を補完表示するもので、建物の安全性や現在の被害状況を示すものではありません。</p>
+          </section>
           <section id="hazard-panel" class="hazard-panel" aria-labelledby="hazard-title" hidden>
             <h4 id="hazard-title">想定リスク</h4>
             <p id="hazard-status" class="hazard-status" aria-live="polite"></p>
@@ -109,6 +130,8 @@
           <span id="visible-count" class="visible-count">0</span>
         </div>
       </div>
+
+      <p class="list-guide">一覧を選ぶと地図をその場所へ移動し、PLATEAU対応地域では3D・想定リスクも確認できます。</p>
 
       <section id="summary-panel" class="summary-panel" aria-labelledby="summary-title" hidden>
         <h3 id="summary-title" class="summary-title">いま表示中の集計</h3>
@@ -185,7 +208,7 @@
         <a href="/api/reports.geojson" download>GeoJSON出力</a>
       </div>
 
-      <section id="event-list" class="event-list" aria-label="公開情報一覧" tabindex="-1"></section>
+      <section id="event-list" class="event-list" aria-label="公開情報一覧" tabindex="-1" aria-busy="true"></section>
 
       <section class="lifeline-panel" aria-labelledby="lifeline-title">
         <h3 id="lifeline-title">停電・断水などライフライン情報</h3>
@@ -208,6 +231,9 @@
 
   <div id="live" class="visually-hidden" aria-live="polite"></div>
   <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js" crossorigin="anonymous"></script>
+  <script type="importmap">
+    {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.module.js","three/":"https://cdn.jsdelivr.net/npm/three@0.183.0/"}}
+  </script>
   <script src="app.js"></script>
 </body>
 </html>

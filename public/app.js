@@ -6,6 +6,7 @@ if ('serviceWorker' in navigator) {
 
 const EMPTY_GEOJSON = { type: 'FeatureCollection', features: [] };
 const HAZARD_STORAGE_KEY = 'mamoru-map-hazard-layers';
+const PLATEAU_3D_STORAGE_KEY = 'mamoru-map-3d-display';
 const HAZARD_STYLE = {
   landslide: { color: '#8a5a2b', outline: '#5e3c1f', pattern: '斜線' }
 };
@@ -20,7 +21,10 @@ const LIFECYCLE_LABELS = { active: '発生中', ongoing: '継続', resolved: '�
 const INFORMATION_CLASS_LABELS = { official: '公式', media: '報道', reference: '参考' };
 const LOCATION_PRECISION_LABELS = { exact: '正確な地点', representative: '地域代表点', estimated: '推定位置', unknown: '位置不明' };
 const ROAD_STATUS_LABELS = { recently_passed: '直近に通行実績あり', restricted: '交通規制あり', closed: '通行止め', unknown: '通行状況不明' };
-const MARKER_ICONS = { warning: '⚠️', damage: '🏚️', road: '🛣️', road_closed: '🚫', shelter: '🏠', support: '🤝', other: '📍' };
+const MARKER_ICONS = {
+  earthquake: '🫨', tsunami: '🌊', typhoon: '🌀', rain_flood: '☔', volcano: '🌋', snow: '❄️', road: '🚧',
+  warning: '⚠️', damage: '🏚️', road_closed: '🚧', shelter: '🏠', support: '🤝', other: '⚠️'
+};
 // 「災害の記録」ドロップダウンの表示ラベル用。災害種別(event_kind)ごとの絵文字。
 // バックエンドの実 event_kind: earthquake / tsunami / volcano / typhoon / rain_flood(大雨・洪水を統合) / snow / road。
 // 未定義・未知の種別は ⚠️ にフォールバックする。絵文字は表示のみで value/event_key には含めない。
@@ -57,6 +61,11 @@ const state = {
   hazardConfigs: new Map(),
   hazardBound: new Set(),
   hazardEnabled: new Set(),
+  plateau3dRequest: 0,
+  plateau3dConfig: null,
+  plateau3dEnabled: false,
+  plateau3dRenderer: null,
+  plateau3dLoadPromise: null
 };
 
 // 気象庁の公開タイルを、利用者が選んだときだけ取得する。雨雲は最新の観測1枚であり、
@@ -432,7 +441,8 @@ function normalizeReport(report) {
     ? report.location_precision : Number.isFinite(latitude) && Number.isFinite(longitude) ? 'estimated' : 'unknown';
   const roadStatus = ROAD_STATUS_LABELS[report.road_status] ? report.road_status : 'unknown';
   const reportType = TYPE_LABELS[report.report_type] ? report.report_type : 'other';
-  const markerIcon = reportType === 'road' && roadStatus === 'closed' ? 'road_closed' : reportType;
+  const eventKind = String(report.event_kind || '').trim();
+  const markerIcon = EVENT_KIND_ICONS[eventKind] ? eventKind : (reportType === 'road' ? 'road' : reportType);
   return {
     ...report,
     id: String(report.id),
@@ -689,10 +699,11 @@ function renderCounts() {
 function renderList() {
   const list = $('#event-list');
   list.replaceChildren();
+  list.setAttribute('aria-busy', 'false');
   if (!state.filtered.length) {
     const empty = element('div', 'empty-state');
     empty.append(element('strong', '', '条件に一致する情報はありません'));
-    empty.append(element('p', '', '検索語や絞り込み条件を変更してください。'));
+    empty.append(element('p', '', '検索語や絞り込み条件を変更するか、「条件を解除」を選んでください。'));
     list.append(empty);
     return;
   }
@@ -717,7 +728,7 @@ function buildReportCard(report) {
   meta.append(element('span', `lifecycle-badge ${report.lifecycle_status}`, report.lifecycleLabel));
   meta.append(element('time', 'event-time', formatShortTime(report.published_at)));
   target.append(meta);
-  target.append(element('span', 'event-title', report.title));
+  target.append(element('span', 'event-title', `${report.markerEmoji} ${report.title}`));
   target.append(element('span', 'event-place', `⌖ ${report.area}`));
   target.append(element('span', 'event-summary', report.summary));
   card.append(target);
@@ -773,7 +784,8 @@ function reportFeature(report) {
       location_method: report.location_method || '',
       verification_status: report.verification_status,
       lifecycle_status: report.lifecycle_status,
-      location_precision: report.location_precision
+      location_precision: report.location_precision,
+      marker_icon: report.markerIcon
     }
   };
 }
@@ -803,9 +815,44 @@ function hasCoordinates(report) {
   return report.location_precision !== 'unknown' && Number.isFinite(report.latitude) && Number.isFinite(report.longitude);
 }
 
+async function populatePlateauAreas() {
+  const select = $('#plateau-area-select');
+  if (!select) return;
+  const choices = new Map();
+  state.reports.forEach((report) => {
+    const code = String(report.municipality_code || report.city_code || '').trim();
+    if (/^\d{5}$/.test(code) && !choices.has(code)) choices.set(code, report);
+  });
+  try {
+    const response = await fetch(`${apiBase}/api/plateau/regions`, { headers: { accept: 'application/json' }, priority: 'low' });
+    if (response.ok) {
+      const payload = await response.json();
+      (payload.regions || []).filter((region) => region.is_available).forEach((region) => {
+        const code = String(region.municipality_code || '').trim();
+        if (/^\d{5}$/.test(code) && !choices.has(code)) choices.set(code, { id: `plateau-${code}`, municipality_code: code, area: `${region.prefecture_name || ''}${region.city_name || ''}` });
+      });
+    }
+  } catch { /* 地図・一覧の地域候補だけで継続する */ }
+  select.replaceChildren(new Option('自治体を選択', ''));
+  [...choices.values()].sort((a, b) => a.area.localeCompare(b.area, 'ja')).forEach((report) => {
+    select.append(new Option(report.area, report.id));
+  });
+  select.disabled = choices.size === 0;
+}
+
+function syncPlateauAreaSelection(report) {
+  const select = $('#plateau-area-select');
+  if (!select) return;
+  const code = String(report.municipality_code || report.city_code || '').trim();
+  const value = [...select.options].find((option) => option.value === report.id || option.value === `plateau-${code}`)?.value;
+  if (value) select.value = value;
+}
+
 function selectReport(report, moveMap) {
   state.selectedId = report.id;
+  syncPlateauAreaSelection(report);
   loadPlateauAvailability(report);
+  loadPlateau3dConfig(report);
   loadHazardConfig(report);
   $$('.event-card').forEach((card) => { card.dataset.selected = String(card.dataset.id === report.id); });
   if (!hasCoordinates(report) || !state.mapReady) {
@@ -816,7 +863,7 @@ function selectReport(report, moveMap) {
     state.map.easeTo({ center: [report.longitude, report.latitude], zoom: Math.max(state.map.getZoom(), 12), duration: reducedMotion ? 0 : 500 });
   }
   showPopup(report);
-  $('#live').textContent = `${report.area}の情報を地図に表示しました。`;
+  $('#live').textContent = `${report.area}の情報を地図に表示しました。PLATEAU対応状況も更新しました。`;
 }
 
 function setPlateauStatus(status, message) {
@@ -841,6 +888,72 @@ function renderPlateauDetails(datasets) {
   });
   details.append(list);
   details.hidden = false;
+}
+
+function setPlateau3dStatus(message) { const status = $('#plateau-3d-status'); if (status) status.textContent = message; }
+function savePlateau3dPreference() { try { localStorage.setItem(PLATEAU_3D_STORAGE_KEY, JSON.stringify({ buildings: state.plateau3dEnabled })); } catch { /* optional */ } }
+async function loadPlateau3dRenderer() {
+  if (state.plateau3dRenderer) return state.plateau3dRenderer;
+  if (!state.plateau3dLoadPromise) {
+    state.plateau3dLoadPromise = import('/plateau-3d.js')
+      .then((module) => {
+        if (typeof module.showPlateauBuildings !== 'function' || typeof module.hidePlateauBuildings !== 'function') throw new Error('invalid_3d_renderer_module');
+        state.plateau3dRenderer = module;
+        return module;
+      })
+      .catch((error) => { state.plateau3dLoadPromise = null; throw error; });
+  }
+  return state.plateau3dLoadPromise;
+}
+function disablePlateau3d() {
+  state.plateau3dRenderer?.hidePlateauBuildings(state.map); state.plateau3dEnabled = false; savePlateau3dPreference();
+  const buildings = $('#plateau-buildings-3d'); const view = $('#plateau-view-3d'); const back = $('#plateau-return-2d');
+  if (buildings) buildings.checked = false; if (view) view.checked = false; if (back) back.disabled = true;
+  if (state.map) state.map.easeTo({ pitch: 0, bearing: 0, duration: reducedMotion ? 0 : 250 });
+}
+
+function renderPlateau3dConfig(config) {
+  const panel = $('#plateau-3d-panel'); const view = $('#plateau-view-3d'); const buildings = $('#plateau-buildings-3d'); const back = $('#plateau-return-2d'); const meta = $('#plateau-3d-meta');
+  if (!panel || !view || !buildings || !back || !meta) return;
+  panel.hidden = false; disablePlateau3d(); state.plateau3dConfig = config;
+  view.disabled = !config.available; buildings.disabled = !config.available; back.disabled = true;
+  meta.replaceChildren();
+  if (!config.available) { setPlateau3dStatus(config.reason || 'この地域には3D建築物データがありません。'); meta.hidden = true; return; }
+  setPlateau3dStatus('公式の建築物3Dモデルを利用できます。必要なときだけ表示してください。');
+  [['整備年度', config.datasetYear || 'データなし'], ['仕様', config.specificationVersion || 'データなし'], ['出典', config.sourceName || 'データなし'], ['最終確認', config.lastCheckedAt ? formatShortTime(config.lastCheckedAt) : 'データなし']].forEach(([key, value]) => {
+    meta.append(element('dt', '', key), element('dd', '', value));
+  });
+  meta.hidden = false;
+}
+
+async function enablePlateau3d() {
+  const config = state.plateau3dConfig;
+  if (!config?.available || !state.mapReady) throw new Error('3d_renderer_unavailable');
+  setPlateau3dStatus('3D描画モジュールを読み込んでいます…');
+  const renderer = await loadPlateau3dRenderer();
+  setPlateau3dStatus('3D建築物を読み込んでいます…');
+  await renderer.showPlateauBuildings(state.map, config.tilesetUrl);
+  state.plateau3dEnabled = true; savePlateau3dPreference();
+  $('#plateau-view-3d').checked = true; $('#plateau-buildings-3d').checked = true; $('#plateau-return-2d').disabled = false;
+  state.map.easeTo({ pitch: 55, bearing: state.map.getBearing(), duration: reducedMotion ? 0 : 350 });
+  setPlateau3dStatus('3D建築物を表示中です。軽量な2D表示にいつでも戻せます。');
+}
+
+async function loadPlateau3dConfig(report) {
+  const panel = $('#plateau-3d-panel'); const code = String(report?.municipality_code || report?.city_code || '').trim();
+  disablePlateau3d(); state.plateau3dConfig = null;
+  if (!/^\d{5}$/.test(code)) { if (panel) panel.hidden = true; return; }
+  if (panel) panel.hidden = false; setPlateau3dStatus('3D建築物の対応状況を確認中…');
+  const requestId = ++state.plateau3dRequest;
+  try {
+    const response = await fetch(`${apiBase}/api/plateau/3d/config?municipality_code=${encodeURIComponent(code)}`, { headers: { accept: 'application/json' }, priority: 'low' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const config = await response.json();
+    if (requestId !== state.plateau3dRequest || state.selectedId !== report.id) return;
+    renderPlateau3dConfig(config);
+  } catch {
+    if (requestId === state.plateau3dRequest) setPlateau3dStatus('3D建築物の対応状況を確認できませんでした。2D地図は引き続き利用できます。');
+  }
 }
 
 function renderHazardControls(hazards) {
@@ -898,7 +1011,7 @@ async function loadPlateauAvailability(report) {
   if (details) { details.hidden = true; details.replaceChildren(); }
   const code = String(report?.municipality_code || report?.city_code || '').trim();
   if (!/^\d{5}$/.test(code)) {
-    setPlateauStatus('unknown', '地域を選択してください');
+    setPlateauStatus('unknown', 'この情報には自治体コードがありません。別の地域を選ぶと対応状況を確認できます。');
     return;
   }
   const requestId = ++state.plateauRequest;
@@ -1063,6 +1176,7 @@ async function loadReports() {
     state.reports = (payload.reports || []).map(normalizeReport);
     initializeTimeline();
     populateAreas();
+    populatePlateauAreas();
     const latest = state.reports.reduce((value, report) => timestamp(report.retrieved_at) > timestamp(value) ? report.retrieved_at : value, null);
     $('#last-updated').textContent = `データ最終取得: ${formatExactTime(latest)}`;
     setConnectionState('connected', '履歴API接続');
@@ -1096,6 +1210,15 @@ function bindControls() {
     configureTimelineForEvent(eventKey);
     scheduleRender();
     $('#live').textContent = eventKey ? '選択した災害を10分刻みの流れで表示します。' : '災害の時間絞り込みを解除しました。';
+  });
+  $('#plateau-area-select').addEventListener('change', (event) => {
+    const report = state.reports.find((item) => item.id === event.target.value)
+      || (() => { const option = event.target.selectedOptions[0]; const code = event.target.value.replace('plateau-', ''); return /^\d{5}$/.test(code) ? { id: event.target.value, area: option?.textContent || '選択した自治体', municipality_code: code } : null; })();
+    if (!report) return;
+    if (state.reports.includes(report)) { selectReport(report, true); return; }
+    state.selectedId = report.id;
+    loadPlateauAvailability(report); loadPlateau3dConfig(report); loadHazardConfig(report);
+    $('#live').textContent = `${report.area}のPLATEAU対応状況を表示します。地図は現在位置のままです。`;
   });
   $('#timeline-slider').addEventListener('input', (event) => {
     state.selectedBucketIndex = Number(event.target.value);
@@ -1141,6 +1264,15 @@ function bindControls() {
     const toggle = $(config.toggle);
     if (toggle) toggle.addEventListener('change', (event) => toggleJmaTileLayer(key, event.target.checked));
   });
+  const view3d = $('#plateau-view-3d'); const buildings3d = $('#plateau-buildings-3d'); const return2d = $('#plateau-return-2d');
+  const toggle3d = async (event) => {
+    if (!event.target.checked) { disablePlateau3d(); setPlateau3dStatus('軽量な2D表示に戻しました。'); return; }
+    try { await enablePlateau3d(); }
+    catch { disablePlateau3d(); setPlateau3dStatus('3D建築物を読み込めませんでした。軽量な2D表示を続けます。'); }
+  };
+  if (view3d) view3d.addEventListener('change', toggle3d);
+  if (buildings3d) buildings3d.addEventListener('change', toggle3d);
+  if (return2d) return2d.addEventListener('click', () => { disablePlateau3d(); setPlateau3dStatus('軽量な2D表示に戻しました。'); });
   // 給水拠点は対象エリア（熊本）の公式オープンデータが未整備のため現在UI非提供。
   // データ源が整い次第、#layer-water トグルを戻せば water ソース/レイヤーで表示できる。
   const waterToggle = $('#layer-water');

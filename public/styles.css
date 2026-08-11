@@ -166,6 +166,24 @@
     position: absolute;
     inset: 0;
   }
+  .map-guide {
+    position: absolute;
+    inset-block-start: 1rem;
+    inset-inline-end: 1rem;
+    z-index: 9;
+    display: grid;
+    gap: .15rem;
+    max-inline-size: 20rem;
+    padding: .7rem .85rem;
+    border: 1px solid rgb(255 255 255 / 78%);
+    border-radius: .7rem;
+    background: rgb(255 255 255 / 94%);
+    box-shadow: 0 6px 18px rgb(23 58 73 / 12%);
+    backdrop-filter: blur(8px);
+  }
+  .map-guide-eyebrow, .panel-eyebrow { color: var(--teal); font-size: .62rem; font-weight: 900; letter-spacing: .08em; }
+  .map-guide strong { color: var(--navy); font-size: .78rem; }
+  .map-guide span { color: var(--muted); font-size: .67rem; line-height: 1.45; }
 
   .layer-panel {
     position: absolute;
@@ -223,6 +241,8 @@
   }
   .plateau-panel { padding: .75rem .9rem .9rem; border-block-start: 1px solid var(--line); }
   .plateau-panel h3 { font-size: .8rem; }
+  .plateau-area-picker { display: grid; gap: .2rem; margin-block-start: .55rem; color: var(--muted); font-size: .68rem; font-weight: 800; }
+  .plateau-area-picker select { min-block-size: 2.5rem; inline-size: 100%; padding-inline: .55rem; border: 1px solid #b5c3c0; border-radius: .45rem; color: var(--ink); background: var(--surface); font-size: .76rem; }
   .plateau-status { margin-block: .35rem; font-size: .78rem; font-weight: 800; }
   .plateau-status[data-state="supported"] { color: var(--teal); }
   .plateau-status[data-state="unsupported"], .plateau-status[data-state="unknown"] { color: var(--muted); }
@@ -232,6 +252,14 @@
   .plateau-dataset-list li { display: grid; gap: .1rem; padding: .5rem; border: 1px solid var(--line); border-radius: .45rem; background: var(--surface-soft); }
   .plateau-note, .plateau-source { color: var(--muted); font-size: .65rem; }
   .plateau-source { margin-block-start: .45rem; }
+  .plateau-3d-panel { margin-block-start: .7rem; padding-block-start: .65rem; border-block-start: 1px solid var(--line); }
+  .plateau-3d-panel h4 { margin: 0; font-size: .78rem; }
+  .plateau-3d-status, .plateau-3d-disclaimer { margin: .35rem 0; color: var(--muted); font-size: .67rem; line-height: 1.5; }
+  .plateau-3d-controls { display: grid; gap: .4rem; }
+  .plateau-3d-controls label, .plateau-3d-controls button { min-block-size: 2rem; font-size: .72rem; }
+  .plateau-3d-controls button { justify-self: start; padding-inline: .55rem; border: 1px solid var(--line); border-radius: .35rem; color: var(--teal); background: var(--surface); font-weight: 800; }
+  .plateau-3d-meta { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .18rem .45rem; margin: .5rem 0; font-size: .64rem; }
+  .plateau-3d-meta dt { color: var(--muted); } .plateau-3d-meta dd { margin: 0; overflow-wrap: anywhere; }
   .hazard-panel { margin-block-start: .7rem; padding-block-start: .65rem; border-block-start: 1px solid var(--line); }
   .hazard-panel h4 { margin: 0; font-size: .78rem; }
   .hazard-status, .hazard-disclaimer { margin: .35rem 0; color: var(--muted); font-size: .67rem; line-height: 1.5; }
@@ -308,6 +336,7 @@
     color: var(--muted);
     font-size: .72rem;
   }
+  .list-guide { margin: 0 1.35rem 1rem; padding: .6rem .75rem; border-inline-start: 3px solid var(--teal); border-radius: 0 .45rem .45rem 0; color: #52636a; background: #f1f7f5; font-size: .69rem; line-height: 1.55; }
   .visible-count {
     min-inline-size: 3rem;
     display: grid;
@@ -876,6 +905,7 @@
   }
   .empty-state strong { display: block; color: var(--ink); }
   .empty-state p { margin-block-start: .35rem; font-size: .8rem; }
+  .empty-state::before { content: "⚠️"; display: block; margin-block-end: .45rem; font-size: 1.65rem; }
 
   .sidebar-foot {
     display: grid;
@@ -948,6 +978,12 @@
     border-block-end: 1px solid var(--line);
   }
   .sidebar { overflow: visible; }
+  .map-guide {
+    inset-block-start: auto;
+    inset-block-end: 1rem;
+    inset-inline-end: 1rem;
+    max-inline-size: min(23rem, calc(100% - 6rem));
+  }
 }
 
 @media (max-width: 38rem) {
@@ -970,11 +1006,18 @@
     max-inline-size: calc(100% - 4.5rem);
   }
   .map-note span { display: none; }
+  .map-guide {
+    inset-inline-end: .65rem;
+    inset-block-end: 3.6rem;
+    max-inline-size: calc(100% - 1.3rem);
+  }
+  .map-guide span { display: none; }
   .sidebar-head,
   .filter-form,
   .event-card,
   .sidebar-foot { padding-inline: 1rem; }
   .weather-panel { margin-inline: 1rem; }
+  .list-guide { margin-inline: 1rem; }
   .export-row { padding-inline: 1rem; }
   .filter-grid { grid-template-columns: 1fr; }
   .filter-grid > label,
