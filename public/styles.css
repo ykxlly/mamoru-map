@@ -263,8 +263,9 @@
   .plateau-selection { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .45rem; margin: 0; padding: .6rem; border: 1px solid var(--line); border-radius: .5rem; }
   .plateau-selection legend, .plateau-capabilities h4, .plateau-actions h4 { color: var(--navy); font-size: .73rem; font-weight: 900; }
   .plateau-area-picker { display: grid; gap: .2rem; margin-block-start: .55rem; color: var(--muted); font-size: .68rem; font-weight: 800; }
-  .plateau-area-picker select { min-block-size: 2.5rem; inline-size: 100%; padding-inline: .55rem; border: 1px solid #b5c3c0; border-radius: .45rem; color: var(--ink); background: var(--surface); font-size: .76rem; }
+  .plateau-area-picker select { min-block-size: 2.75rem; inline-size: 100%; min-inline-size: 0; padding-inline: .55rem; border: 1px solid #b5c3c0; border-radius: .45rem; color: var(--ink); background: var(--surface); font-size: .76rem; }
   .plateau-selection .plateau-area-picker { margin: 0; }
+  .plateau-selection label[for="plateau-area-select"] { grid-column: 1 / -1; }
   .plateau-selection-summary, .plateau-capabilities dl { grid-column: 1 / -1; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .22rem .55rem; margin: .25rem 0 0; font-size: .67rem; }
   .plateau-selection-summary dt, .plateau-capabilities dt { color: var(--muted); }
   .plateau-selection-summary dd, .plateau-capabilities dd { margin: 0; font-weight: 800; overflow-wrap: anywhere; }
@@ -275,7 +276,7 @@
   .plateau-region-browser input { min-block-size: 2.4rem; padding-inline: .5rem; border: 1px solid #b5c3c0; border-radius: .4rem; color: var(--ink); background: #fff; font: inherit; }
   .plateau-region-count { font-weight: 800; }
   .plateau-region-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .35rem; max-block-size: 13rem; margin: .55rem .6rem .65rem; padding: 0; overflow-y: auto; list-style: none; }
-  .plateau-region-list button { inline-size: 100%; min-block-size: 2.35rem; padding: .35rem .45rem; border: 1px solid #c7d6d2; border-radius: .35rem; color: var(--navy); background: #fff; font: inherit; font-size: .68rem; font-weight: 800; text-align: start; cursor: pointer; }
+  .plateau-region-list button { inline-size: 100%; min-block-size: 2.75rem; padding: .35rem .45rem; border: 1px solid #c7d6d2; border-radius: .35rem; color: var(--navy); background: #fff; font: inherit; font-size: .68rem; font-weight: 800; text-align: start; cursor: pointer; }
   .plateau-region-list button:hover, .plateau-region-list button:focus-visible { border-color: var(--teal); background: var(--teal-soft); }
   .plateau-status { margin-block: .35rem; font-size: .78rem; font-weight: 800; }
   .plateau-status[data-state="supported"] { color: var(--teal); }
@@ -737,6 +738,13 @@
     font-size: .68rem;
     font-weight: 800;
   }
+  .selected-region-status,
+  .region-filter-help {
+    grid-column: 1 / -1;
+    margin: 0;
+  }
+  .selected-region-status { color: var(--navy); font-size: .82rem; font-weight: 900; }
+  .region-filter-help { color: var(--muted); font-size: .67rem; line-height: 1.5; }
   .filter-grid label:last-child { grid-column: 1 / -1; }
   .filter-grid select {
     inline-size: 100%;
@@ -749,6 +757,19 @@
     color: var(--ink);
     background: var(--surface);
     font-size: .85rem;
+  }
+  .region-reset-button {
+    grid-column: 1 / -1;
+    justify-self: start;
+    min-block-size: 2.75rem;
+    padding-inline: .75rem;
+    border: 1px solid #aebfbb;
+    border-radius: .5rem;
+    color: var(--teal);
+    background: #fff;
+    font-size: .75rem;
+    font-weight: 900;
+    cursor: pointer;
   }
 
   .filter-actions {
@@ -1104,6 +1125,9 @@
   .filter-grid { grid-template-columns: 1fr; }
   .filter-grid > label,
   .filter-grid label:last-child { grid-column: 1; }
+  .plateau-selection { grid-template-columns: 1fr; }
+  .plateau-selection label[for="plateau-area-select"] { grid-column: 1; }
+  .plateau-region-list { grid-template-columns: 1fr; }
   .priority-summary > div {
     grid-template-columns: auto 1fr;
     padding-block: .4rem;

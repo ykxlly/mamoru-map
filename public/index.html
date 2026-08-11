@@ -89,14 +89,17 @@
           <label><input name="basemap" type="radio" value="pale" checked> 淡色地図</label>
           <label><input name="basemap" type="radio" value="standard"> 標準地図</label>
         </fieldset>
-        <section class="plateau-panel" aria-labelledby="plateau-title" aria-live="polite">
+        <section class="plateau-panel" aria-labelledby="plateau-title">
           <p class="panel-eyebrow">地域を選んで確認</p>
           <h3 id="plateau-title">PLATEAU・3D・想定リスク</h3>
-          <p class="plateau-intro">PLATEAUは、国土交通省が整備する日本の3D都市モデルです。対応する都市では、建物や都市構造を3Dで確認できます。</p>
+          <p id="plateau-region-help" class="plateau-intro">PLATEAUは、国土交通省が整備する日本の3D都市モデルです。対応する都市では、建物や都市構造を3Dで確認できます。</p>
           <fieldset class="plateau-selection">
             <legend>表示地域</legend>
+            <label class="plateau-area-picker" for="plateau-region-select">地方
+              <select id="plateau-region-select" aria-describedby="plateau-region-help" disabled><option value="">全国</option></select>
+            </label>
             <label class="plateau-area-picker" for="plateau-prefecture-select">都道府県
-              <select id="plateau-prefecture-select" disabled><option value="">都道府県を選択</option></select>
+              <select id="plateau-prefecture-select" aria-describedby="plateau-region-help" disabled><option value="">全国</option></select>
             </label>
             <label class="plateau-area-picker" for="plateau-area-select">市区町村
               <select id="plateau-area-select" disabled><option value="">市区町村を選択</option></select>
@@ -235,7 +238,11 @@
 
         <fieldset class="filter-grid">
           <legend>一覧の絞り込み</legend>
-          <label for="filter-area">地域<select id="filter-area" name="area"><option value="">すべて</option></select></label>
+          <output id="selected-region-status" class="selected-region-status" for="filter-region filter-area">選択中：全国</output>
+          <p id="region-filter-help" class="region-filter-help">地方を選ぶと、その地方の都道府県を北から南の順で表示します。</p>
+          <label for="filter-region">地方<select id="filter-region" name="region" aria-describedby="region-filter-help"><option value="">全国</option></select></label>
+          <label for="filter-area">都道府県<select id="filter-area" name="area" aria-describedby="region-filter-help"><option value="">全国</option></select></label>
+          <button id="region-reset" class="region-reset-button" type="button">全国へ戻る</button>
           <label for="filter-type">情報の種類<select id="filter-type" name="type"><option value="">すべて</option><option value="warning">警報・注意</option><option value="damage">被害</option><option value="road">道路・交通</option><option value="shelter">避難所</option><option value="support">支援</option><option value="other">その他</option></select></label>
           <label for="filter-sort">並び順<select id="filter-sort" name="sort"><option value="newest">発表日時が新しい順</option><option value="priority">緊急度が高い順</option><option value="updated">取得日時が新しい順</option></select></label>
         </fieldset>
