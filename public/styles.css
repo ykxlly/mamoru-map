@@ -184,7 +184,7 @@
   .map-guide-eyebrow, .panel-eyebrow { color: var(--teal); font-size: .62rem; font-weight: 900; letter-spacing: .08em; }
   .map-guide strong { color: var(--navy); font-size: .78rem; }
   .map-guide span { color: var(--muted); font-size: .67rem; line-height: 1.45; }
-  .map-guide button { justify-self: start; min-block-size: 2rem; padding: .2rem .55rem; border: 1px solid #9eb9b2; border-radius: .35rem; color: var(--teal); background: #fff; font: inherit; font-weight: 850; cursor: pointer; }
+  .map-guide button { justify-self: start; min-block-size: 2.75rem; padding: .2rem .55rem; border: 1px solid #9eb9b2; border-radius: .35rem; color: var(--teal); background: #fff; font: inherit; font-weight: 850; cursor: pointer; }
 
   .onboarding-dialog { inline-size: min(31rem, calc(100% - 2rem)); max-block-size: min(42rem, calc(100dvh - 2rem)); border: 0; border-radius: .9rem; padding: 0; color: var(--ink); box-shadow: 0 1.5rem 4rem rgb(12 35 46 / 32%); }
   .onboarding-dialog::backdrop { background: rgb(13 40 53 / 58%); }
@@ -655,6 +655,24 @@
     color: var(--teal);
     font-size: .75rem;
     font-weight: 900;
+  }
+  .event-select-label {
+    display: grid;
+    gap: .3rem;
+    min-inline-size: 0;
+    color: #405158;
+    font-size: .72rem;
+    font-weight: 800;
+  }
+  #event-select {
+    inline-size: 100%;
+    min-inline-size: 0;
+    min-block-size: 2.75rem;
+    padding-inline: .55rem;
+    border: 1px solid #aebebb;
+    border-radius: .45rem;
+    color: var(--ink);
+    background: var(--surface);
   }
   .timeline-panel input[type="range"] {
     inline-size: 100%;
