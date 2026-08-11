@@ -1,4 +1,8 @@
 import { fetchJsonWithRecovery, plateauCenterFromTileset } from './plateau-location.js';
+import {
+  NATIONAL_OPTION, PREFECTURES, REGIONS, orderedPrefectureOptions, prefectureFrom,
+  prefecturesForRegion, regionForPrefecture, sortPlateauRegions
+} from './region-order.js';
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
@@ -454,6 +458,7 @@ function normalizeReport(report) {
   const reportType = TYPE_LABELS[report.report_type] ? report.report_type : 'other';
   const eventKind = String(report.event_kind || '').trim();
   const markerIcon = EVENT_KIND_ICONS[eventKind] ? eventKind : (reportType === 'road' ? 'road' : 'other');
+  const displayPrefecture = prefectureFrom(report.area, report.prefecture_code || report.municipality_code || report.city_code);
   return {
     ...report,
     id: String(report.id),
@@ -471,6 +476,8 @@ function normalizeReport(report) {
     location_precision: locationPrecision,
     road_status: roadStatus,
     roadStatusLabel: ROAD_STATUS_LABELS[roadStatus],
+    display_prefecture_code: displayPrefecture?.prefectureCode || '',
+    display_region_id: displayPrefecture?.regionId || '',
     markerIcon,
     markerEmoji: MARKER_ICONS[markerIcon] || MARKER_ICONS.other,
     event_key: String(report.event_key || ''),
@@ -513,7 +520,8 @@ function setLifecycleSelection(values) {
 
 function filterReports() {
   const query = $('#search-query').value.trim().toLocaleLowerCase('ja');
-  const area = $('#filter-area').value;
+  const regionId = $('#filter-region').value;
+  const prefectureCode = $('#filter-area').value;
   const type = $('#filter-type').value;
   const sort = $('#filter-sort').value;
   const emergencyOnly = $('#emergency-only').checked;
@@ -529,7 +537,8 @@ function filterReports() {
       && (!state.selectedEventKey || (report.event_key === state.selectedEventKey && report.eventTimestamp < selectedBucketEnd()))
       && (!emergencyOnly || report.priority === 'emergency')
       && (!query || haystack.includes(query))
-      && (!area || report.area === area)
+      && (!regionId || report.display_region_id === regionId)
+      && (!prefectureCode || report.display_prefecture_code === prefectureCode)
       && (!type || report.report_type === type);
   });
 
@@ -834,39 +843,47 @@ function hasCoordinates(report) {
 }
 
 async function populatePlateauAreas() {
+  const regionSelect = $('#plateau-region-select');
   const prefectureSelect = $('#plateau-prefecture-select');
-  if (!prefectureSelect) return;
+  if (!regionSelect || !prefectureSelect) return;
   try {
     const response = await fetch(`${apiBase}/api/plateau/regions`, { headers: { accept: 'application/json' }, priority: 'low' });
     if (response.ok) {
       const payload = await response.json();
-      state.plateauRegions = (payload.regions || []).filter((region) => region.is_available);
+      state.plateauRegions = sortPlateauRegions((payload.regions || []).filter((region) => region.is_available));
     }
   } catch { /* PLATEAU機能だけを利用不可にし、地図と災害情報は継続する */ }
-  const prefectures = new Map();
-  state.plateauRegions.forEach((region) => {
-    const key = String(region.prefecture_code || region.prefecture_name || '').trim();
-    if (key && !prefectures.has(key)) prefectures.set(key, region.prefecture_name || key);
-  });
-  prefectureSelect.replaceChildren(new Option('都道府県を選択', ''));
-  [...prefectures].sort((a, b) => a[1].localeCompare(b[1], 'ja')).forEach(([value, label]) => prefectureSelect.append(new Option(label, value)));
-  prefectureSelect.disabled = prefectures.size === 0;
+  const availableRegionIds = new Set(state.plateauRegions.map((item) => prefectureFrom(item.prefecture_name, item.prefecture_code || item.municipality_code)?.regionId).filter(Boolean));
+  regionSelect.replaceChildren(new Option(NATIONAL_OPTION.regionName, ''));
+  REGIONS.filter((item) => availableRegionIds.has(item.regionId)).forEach((item) => regionSelect.append(new Option(item.regionName, item.regionId)));
+  regionSelect.disabled = state.plateauRegions.length === 0;
+  populatePlateauPrefectures('');
   populatePlateauMunicipalities('');
   renderPlateauRegionBrowser();
 }
 
-function populatePlateauMunicipalities(prefectureKey, selectedCode = '') {
+function populatePlateauPrefectures(regionId = '', selectedPrefectureCode = '') {
+  const select = $('#plateau-prefecture-select');
+  if (!select) return;
+  const allowedCodes = new Set(state.plateauRegions.map((item) => prefectureFrom(item.prefecture_name, item.prefecture_code || item.municipality_code)?.prefectureCode).filter(Boolean));
+  const prefectures = orderedPrefectureOptions(new Map(), { regionId, allowedCodes });
+  select.replaceChildren(new Option(NATIONAL_OPTION.regionName, ''));
+  prefectures.forEach((item) => select.append(new Option(item.prefectureName, item.prefectureCode)));
+  select.disabled = state.plateauRegions.length === 0;
+  if (selectedPrefectureCode && prefectures.some((item) => item.prefectureCode === selectedPrefectureCode)) select.value = selectedPrefectureCode;
+}
+
+function populatePlateauMunicipalities(prefectureCode, selectedCode = '') {
   const select = $('#plateau-area-select');
   if (!select) return;
   const regions = state.plateauRegions
-    .filter((region) => !prefectureKey || String(region.prefecture_code || region.prefecture_name || '').trim() === prefectureKey)
-    .sort((a, b) => String(a.city_name || '').localeCompare(String(b.city_name || ''), 'ja'));
-  select.replaceChildren(new Option(prefectureKey ? '市区町村を選択' : '先に都道府県を選択', ''));
+    .filter((region) => prefectureCode && prefectureFrom(region.prefecture_name, region.prefecture_code || region.municipality_code)?.prefectureCode === prefectureCode);
+  select.replaceChildren(new Option(prefectureCode ? '市区町村を選択' : '先に都道府県を選択', ''));
   regions.forEach((region) => {
     const code = String(region.municipality_code || '').trim();
     if (/^\d{5}$/.test(code)) select.append(new Option(region.city_name || code, `plateau-${code}`));
   });
-  select.disabled = !prefectureKey || regions.length === 0;
+  select.disabled = !prefectureCode || regions.length === 0;
   if (selectedCode && [...select.options].some((option) => option.value === `plateau-${selectedCode}`)) select.value = `plateau-${selectedCode}`;
 }
 
@@ -874,7 +891,13 @@ function renderPlateauRegionBrowser() {
   const list = $('#plateau-region-list'); const count = $('#plateau-region-count');
   if (!list || !count) return;
   const query = String($('#plateau-region-search')?.value || '').trim().toLocaleLowerCase('ja');
-  const regions = state.plateauRegions.filter((region) => `${region.prefecture_name || ''}${region.city_name || ''}`.toLocaleLowerCase('ja').includes(query));
+  const regionId = $('#plateau-region-select')?.value || '';
+  const prefectureCode = $('#plateau-prefecture-select')?.value || '';
+  const regions = state.plateauRegions.filter((region) => {
+    const prefecture = prefectureFrom(region.prefecture_name, region.prefecture_code || region.municipality_code);
+    const matchesQuery = `${region.prefecture_name || ''}${region.city_name || ''}`.toLocaleLowerCase('ja').includes(query);
+    return matchesQuery && (!regionId || prefecture?.regionId === regionId) && (!prefectureCode || prefecture?.prefectureCode === prefectureCode);
+  });
   list.replaceChildren();
   if (!state.plateauRegions.length) { count.textContent = '対応自治体を取得できませんでした。地図または一覧から地域を選ぶと確認できます。'; return; }
   count.textContent = query ? `${regions.length}件の対応自治体` : `対応自治体 ${regions.length}件`;
@@ -910,7 +933,13 @@ function updatePlateauSelectionUi() {
   $('#plateau-clear').disabled = !hasSelection;
   const selectedDisaster = state.reports.find((item) => item.id === state.selectedId);
   const disasterCode = String(selectedDisaster?.municipality_code || selectedDisaster?.city_code || '');
-  $('#plateau-region-mismatch').hidden = !hasSelection || !/^\d{5}$/.test(disasterCode) || disasterCode === code;
+  const plateauPrefecture = prefectureFrom(region?.prefecture_name, region?.prefecture_code || code);
+  const disasterPrefectureCode = $('#filter-area')?.value || (/^\d{5}$/.test(disasterCode) ? disasterCode.slice(0, 2) : '');
+  const disasterRegionId = $('#filter-region')?.value || prefectureFrom(selectedDisaster?.area, disasterCode)?.regionId || '';
+  const differs = disasterPrefectureCode
+    ? disasterPrefectureCode !== plateauPrefecture?.prefectureCode
+    : disasterRegionId ? disasterRegionId !== plateauPrefecture?.regionId : false;
+  $('#plateau-region-mismatch').hidden = !hasSelection || !differs;
 }
 
 function resetPlateauCapabilitySummary() {
@@ -924,9 +953,11 @@ function selectPlateauRegion(code, options = {}) {
   const region = state.plateauRegions.find((item) => String(item.municipality_code || '') === String(code));
   if (!region) return;
   state.selectedPlateauCode = String(code); state.selectedPlateauRegion = region;
-  const prefectureKey = String(region.prefecture_code || region.prefecture_name || '').trim();
-  $('#plateau-prefecture-select').value = prefectureKey;
-  populatePlateauMunicipalities(prefectureKey, state.selectedPlateauCode);
+  const prefecture = prefectureFrom(region.prefecture_name, region.prefecture_code || region.municipality_code);
+  if (!prefecture) return;
+  $('#plateau-region-select').value = prefecture.regionId;
+  populatePlateauPrefectures(prefecture.regionId, prefecture.prefectureCode);
+  populatePlateauMunicipalities(prefecture.prefectureCode, state.selectedPlateauCode);
   updatePlateauSelectionUi(); resetPlateauCapabilitySummary();
   if (options.load === false) return;
   const report = selectedPlateauReport(state.selectedPlateauCode);
@@ -1241,13 +1272,39 @@ function formatExactTime(value) {
   }).format(date);
 }
 
-function populateAreas() {
+function reportCountsByPrefecture() {
+  const counts = new Map(PREFECTURES.map((item) => [item.prefectureCode, 0]));
+  state.reports.forEach((report) => {
+    if (report.display_prefecture_code) counts.set(report.display_prefecture_code, (counts.get(report.display_prefecture_code) || 0) + 1);
+  });
+  return counts;
+}
+
+function updateSelectedRegionStatus() {
+  const region = REGIONS.find((item) => item.regionId === $('#filter-region').value);
+  const prefecture = PREFECTURES.find((item) => item.prefectureCode === $('#filter-area').value);
+  $('#selected-region-status').textContent = prefecture
+    ? `選択中：${prefecture.regionName}・${prefecture.prefectureName}`
+    : region ? `選択中：${region.regionName}` : `選択中：${NATIONAL_OPTION.regionName}`;
+}
+
+function populateAreas(regionId = $('#filter-region').value) {
   const select = $('#filter-area');
   const current = select.value;
-  const areas = [...new Set(state.reports.map((report) => report.area).filter((area) => area !== '地域不明'))].sort((a, b) => a.localeCompare(b, 'ja'));
-  select.replaceChildren(new Option('すべて', ''));
-  areas.forEach((area) => select.append(new Option(area, area)));
-  select.value = areas.includes(current) ? current : '';
+  const prefectures = orderedPrefectureOptions(reportCountsByPrefecture(), { regionId });
+  select.replaceChildren(new Option(NATIONAL_OPTION.regionName, ''));
+  prefectures.forEach((item) => select.append(new Option(`${item.prefectureName}（${item.count}件）`, item.prefectureCode)));
+  select.value = prefectures.some((item) => item.prefectureCode === current) ? current : '';
+  updateSelectedRegionStatus();
+}
+
+function populateDisasterRegions() {
+  const select = $('#filter-region');
+  const current = select.value;
+  select.replaceChildren(new Option(NATIONAL_OPTION.regionName, ''));
+  REGIONS.forEach((item) => select.append(new Option(item.regionName, item.regionId)));
+  select.value = REGIONS.some((item) => item.regionId === current) ? current : '';
+  populateAreas(select.value);
 }
 
 function setConnectionState(stateName, label) {
@@ -1333,7 +1390,7 @@ async function loadReports() {
     const payload = await response.json();
     state.reports = (payload.reports || []).map(normalizeReport);
     initializeTimeline();
-    populateAreas();
+    populateDisasterRegions();
     populatePlateauAreas();
     const latest = state.reports.reduce((value, report) => timestamp(report.retrieved_at) > timestamp(value) ? report.retrieved_at : value, null);
     $('#last-updated').textContent = `データ最終取得: ${formatExactTime(latest)}`;
@@ -1367,7 +1424,31 @@ function bindControls() {
   $('#plateau-region-search')?.addEventListener('input', renderPlateauRegionBrowser);
   form.addEventListener('submit', (event) => { event.preventDefault(); scheduleRender(); });
   $('#search-query').addEventListener('input', scheduleRender);
-  ['#filter-area', '#filter-type', '#filter-sort', '#emergency-only'].forEach((selector) => $(selector).addEventListener('change', scheduleRender));
+  $('#filter-region').addEventListener('change', (event) => {
+    populateAreas(event.target.value);
+    updatePlateauSelectionUi();
+    scheduleRender();
+  });
+  $('#filter-area').addEventListener('change', (event) => {
+    const selectedCode = event.target.value;
+    const region = regionForPrefecture(selectedCode);
+    if (region && $('#filter-region').value !== region.regionId) {
+      $('#filter-region').value = region.regionId;
+      populateAreas(region.regionId);
+      $('#filter-area').value = selectedCode;
+    }
+    updateSelectedRegionStatus();
+    updatePlateauSelectionUi();
+    scheduleRender();
+  });
+  $('#region-reset').addEventListener('click', () => {
+    $('#filter-region').value = '';
+    $('#filter-area').value = '';
+    populateAreas('');
+    updatePlateauSelectionUi();
+    scheduleRender();
+  });
+  ['#filter-type', '#filter-sort', '#emergency-only'].forEach((selector) => $(selector).addEventListener('change', scheduleRender));
   $$('.priority-toggle').forEach((input) => input.addEventListener('change', scheduleRender));
   $$('.verification-toggle').forEach((input) => input.addEventListener('change', scheduleRender));
   $$('.lifecycle-toggle').forEach((input) => input.addEventListener('change', scheduleRender));
@@ -1381,8 +1462,16 @@ function bindControls() {
     scheduleRender();
     $('#live').textContent = eventKey ? '選択した災害を10分刻みの流れで表示します。' : '災害の時間絞り込みを解除しました。';
   });
+  $('#plateau-region-select').addEventListener('change', (event) => {
+    populatePlateauPrefectures(event.target.value);
+    populatePlateauMunicipalities('');
+    renderPlateauRegionBrowser();
+  });
   $('#plateau-prefecture-select').addEventListener('change', (event) => {
+    const prefecture = prefectureFrom('', event.target.value);
+    if (prefecture) $('#plateau-region-select').value = prefecture.regionId;
     populatePlateauMunicipalities(event.target.value);
+    renderPlateauRegionBrowser();
   });
   $('#plateau-area-select').addEventListener('change', (event) => {
     const code = event.target.value.replace('plateau-', '');
@@ -1417,6 +1506,7 @@ function bindControls() {
       setLifecycleSelection(['active', 'ongoing']);
       $('#event-select').value = '';
       configureTimelineForEvent('');
+      populateDisasterRegions();
       scheduleRender();
     }, 0);
   });
@@ -1456,7 +1546,7 @@ function bindControls() {
   });
   $('#plateau-clear')?.addEventListener('click', () => {
     disablePlateau3d(); removeHazardLayers(); state.selectedPlateauCode = ''; state.selectedPlateauRegion = null; state.plateau3dConfig = null; state.plateauAvailability = null; state.plateauHazards = [];
-    $('#plateau-prefecture-select').value = ''; populatePlateauMunicipalities(''); updatePlateauSelectionUi(); resetPlateauCapabilitySummary();
+    $('#plateau-region-select').value = ''; populatePlateauPrefectures(''); populatePlateauMunicipalities(''); renderPlateauRegionBrowser(); updatePlateauSelectionUi(); resetPlateauCapabilitySummary();
     $('#plateau-details').hidden = true; $('#plateau-3d-panel').hidden = true; $('#hazard-panel').hidden = true;
     setPlateauStatus('unknown', '自治体を選ぶとPLATEAU対応状況を確認できます。');
     $('#plateau-map-position-status').textContent = '選択を解除しました。地図上の位置確認済みマーカーは参照用に維持します。';
@@ -1474,5 +1564,6 @@ function bindControls() {
 bindControls();
 initializeMap();
 render();
+populateDisasterRegions();
 loadReports();
 loadWeather();

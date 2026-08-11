@@ -1,8 +1,10 @@
+import { validateRegionConfiguration } from '../public/region-order.js';
+
 export const OBSERVATION_TARGETS = [
   '/', '/api/health', '/api/reports?limit=1', '/api/weather?lat=37.75&lon=140.47',
   '/api/plateau/regions', '/api/plateau/availability?municipality_code=13101', '/api/plateau/hazards',
   '/api/plateau/hazards/config?municipality_code=13101', '/api/plateau/3d/config?municipality_code=13101',
-  '/app.js', '/plateau-location.js', '/styles.css', '/sw.js', '/manifest.json', '/plateau-3d.js', '/api/admin/reports'
+  '/app.js', '/plateau-location.js', '/region-order.js', '/styles.css', '/sw.js', '/manifest.json', '/plateau-3d.js', '/api/admin/reports'
 ];
 
 const EXTERNAL_DEPENDENCY_PATHS = new Set([
@@ -12,7 +14,7 @@ const EXTERNAL_DEPENDENCY_PATHS = new Set([
 const STATIC_CONTENT_TYPES = new Map([
   ['/', ['text/html']], ['/app.js', ['javascript']], ['/styles.css', ['text/css']], ['/sw.js', ['javascript']],
   ['/manifest.json', ['application/manifest+json', 'application/json']], ['/plateau-3d.js', ['javascript']],
-  ['/plateau-location.js', ['javascript']]
+  ['/plateau-location.js', ['javascript']], ['/region-order.js', ['javascript']]
 ]);
 
 function safeErrorCode(error, timedOut) {
@@ -99,6 +101,13 @@ export async function observe(baseUrl, fetchImpl = fetch, options = {}) {
       recoveryAction: attempts > 1 ? 'bounded_retry_no_store' : 'none'
     });
   }
+  const regionAudit = validateRegionConfiguration();
+  results.push({
+    observerRunId, targetId: '/__region-navigation__', environment, observedAt: new Date().toISOString(),
+    status: null, success: regionAudit.valid, errorCode: regionAudit.errorCode, dependency: 'core',
+    attempts: 1, recovered: false, recoveryAction: 'none', prefectureCount: regionAudit.prefectureCount,
+    regionCount: regionAudit.regionCount, checks: ['standard_order', 'unique_47', 'region_membership']
+  });
   const versions = [...new Set(results.filter((item) => STATIC_CONTENT_TYPES.has(pathOnly(item.targetId))).map((item) => item.version).filter(Boolean))];
   if (versions.length > 1) results.push({ observerRunId, targetId: '/__asset-version__', environment, observedAt: new Date().toISOString(), status: null, success: false, errorCode: 'asset_version_mismatch', versions: versions.length, dependency: 'core', attempts: 1, recovered: false, recoveryAction: 'none' });
   return { observerRunId, results };
