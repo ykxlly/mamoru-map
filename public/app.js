@@ -7,6 +7,7 @@ if ('serviceWorker' in navigator) {
 const EMPTY_GEOJSON = { type: 'FeatureCollection', features: [] };
 const HAZARD_STORAGE_KEY = 'mamoru-map-hazard-layers';
 const PLATEAU_3D_STORAGE_KEY = 'mamoru-map-3d-display';
+const ONBOARDING_STORAGE_KEY = 'mamoru-map-onboarding-seen-v1';
 const HAZARD_STYLE = {
   landslide: { color: '#8a5a2b', outline: '#5e3c1f', pattern: '斜線' }
 };
@@ -1202,6 +1203,15 @@ async function loadReports() {
 function bindControls() {
   const drawer = $('#event-list-drawer');
   if (drawer && window.matchMedia('(max-width: 58rem)').matches) drawer.open = false;
+  const onboarding = $('#onboarding-dialog');
+  const markOnboardingSeen = () => { try { localStorage.setItem(ONBOARDING_STORAGE_KEY, '1'); } catch { /* storage is optional */ } };
+  if (onboarding) {
+    let onboardingSeen = false;
+    try { onboardingSeen = localStorage.getItem(ONBOARDING_STORAGE_KEY) === '1'; } catch { /* storage is optional */ }
+    $('#open-onboarding')?.addEventListener('click', () => onboarding.showModal());
+    onboarding.addEventListener('close', markOnboardingSeen);
+    if (!onboardingSeen) window.setTimeout(() => onboarding.showModal(), 300);
+  }
   const form = $('#filter-form');
   form.addEventListener('submit', (event) => { event.preventDefault(); scheduleRender(); });
   $('#search-query').addEventListener('input', scheduleRender);

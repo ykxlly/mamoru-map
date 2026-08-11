@@ -39,6 +39,7 @@
         <p class="map-guide-eyebrow">いま何が起きているか</p>
         <strong>地図の絵文字か、右の情報を選んでください</strong>
         <span>選んだ情報は地図・一覧・PLATEAUの表示に連動します。</span>
+        <button id="open-onboarding" type="button">使い方を見る</button>
       </section>
 
       <details class="layer-panel">
@@ -236,6 +237,20 @@
   </main>
 
   <div id="live" class="visually-hidden" aria-live="polite"></div>
+  <dialog id="onboarding-dialog" class="onboarding-dialog" aria-labelledby="onboarding-title">
+    <form method="dialog">
+      <p class="onboarding-eyebrow">はじめに</p>
+      <h2 id="onboarding-title">まもるマップの見方</h2>
+      <ol>
+        <li><span aria-hidden="true">🗺️</span><div><strong>地図で災害を見つける</strong><small>絵文字は災害種別を表します。</small></div></li>
+        <li><span aria-hidden="true">📋</span><div><strong>情報一覧で詳しく見る</strong><small>選ぶと地図と一覧が連動します。</small></div></li>
+        <li><span aria-hidden="true">🌧️</span><div><strong>必要なレイヤーだけ表示</strong><small>雨雲・危険度は表示レイヤーから選べます。</small></div></li>
+        <li><span aria-hidden="true">🏙️</span><div><strong>対応地域ではPLATEAUを確認</strong><small>自治体を選び、必要なときだけ3DをONにします。</small></div></li>
+      </ol>
+      <p class="onboarding-note">避難・救助の判断は、必ず気象庁・自治体・消防などの一次情報を優先してください。</p>
+      <button id="dismiss-onboarding" value="dismiss">地図を見る</button>
+    </form>
+  </dialog>
   <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js" crossorigin="anonymous"></script>
   <script type="importmap">
     {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.module.js","three/":"https://cdn.jsdelivr.net/npm/three@0.183.0/"}}

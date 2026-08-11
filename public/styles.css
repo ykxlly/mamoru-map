@@ -184,6 +184,21 @@
   .map-guide-eyebrow, .panel-eyebrow { color: var(--teal); font-size: .62rem; font-weight: 900; letter-spacing: .08em; }
   .map-guide strong { color: var(--navy); font-size: .78rem; }
   .map-guide span { color: var(--muted); font-size: .67rem; line-height: 1.45; }
+  .map-guide button { justify-self: start; min-block-size: 2rem; padding: .2rem .55rem; border: 1px solid #9eb9b2; border-radius: .35rem; color: var(--teal); background: #fff; font: inherit; font-weight: 850; cursor: pointer; }
+
+  .onboarding-dialog { inline-size: min(31rem, calc(100% - 2rem)); max-block-size: min(42rem, calc(100dvh - 2rem)); border: 0; border-radius: .9rem; padding: 0; color: var(--ink); box-shadow: 0 1.5rem 4rem rgb(12 35 46 / 32%); }
+  .onboarding-dialog::backdrop { background: rgb(13 40 53 / 58%); }
+  .onboarding-dialog form { display: grid; gap: 1rem; padding: 1.35rem; }
+  .onboarding-eyebrow { margin: 0; color: var(--teal); font-size: .68rem; font-weight: 900; letter-spacing: .08em; }
+  .onboarding-dialog h2 { margin: -.55rem 0 0; color: var(--navy); font-size: 1.35rem; }
+  .onboarding-dialog ol { display: grid; gap: .65rem; margin: 0; padding: 0; list-style: none; }
+  .onboarding-dialog li { display: grid; grid-template-columns: 2.2rem 1fr; gap: .6rem; align-items: center; padding: .65rem; border-radius: .55rem; background: #f2f7f6; }
+  .onboarding-dialog li > span { font-size: 1.25rem; text-align: center; }
+  .onboarding-dialog li strong, .onboarding-dialog li small { display: block; }
+  .onboarding-dialog li strong { color: var(--navy); font-size: .82rem; }
+  .onboarding-dialog li small, .onboarding-note { color: var(--muted); font-size: .72rem; line-height: 1.55; }
+  .onboarding-note { margin: 0; }
+  .onboarding-dialog button { min-block-size: 3rem; border: 0; border-radius: .5rem; color: #fff; background: var(--teal); font: inherit; font-weight: 900; cursor: pointer; }
 
   .layer-panel {
     position: absolute;
